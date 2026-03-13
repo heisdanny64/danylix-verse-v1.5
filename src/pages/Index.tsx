@@ -1,21 +1,19 @@
 import { useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import MovieRow from "@/components/MovieRow";
-import { getMoviesByCategory } from "@/data/movies";
+import { getTrending, getPopular, getByGenre, GENRE_IDS } from "@/lib/tmdb";
 
 const HomePage = () => {
   const navigate = useNavigate();
 
-  const rows = [
-    { title: "Trending Movies", key: "trending_movies" },
-    { title: "Trending Series", key: "trending_series" },
-    { title: "Popular Anime", key: "anime" },
-    { title: "Action Movies", key: "action" },
-  ];
+  const trendingMovies = useQuery({ queryKey: ["trending", "movie"], queryFn: () => getTrending("movie") });
+  const trendingSeries = useQuery({ queryKey: ["trending", "tv"], queryFn: () => getTrending("tv") });
+  const anime = useQuery({ queryKey: ["anime"], queryFn: () => getByGenre(GENRE_IDS.animation) });
+  const action = useQuery({ queryKey: ["action"], queryFn: () => getByGenre(GENRE_IDS.action) });
 
   return (
     <div className="pb-24 min-h-screen">
-      {/* Header */}
       <header className="px-4 pt-6 pb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">
           <span className="text-foreground">D.</span>
@@ -24,7 +22,6 @@ const HomePage = () => {
         <p className="text-xs text-muted-foreground mt-0.5">Danylix Verse</p>
       </header>
 
-      {/* Search Bar */}
       <div className="px-4 mb-6">
         <button
           onClick={() => navigate("/search")}
@@ -35,11 +32,11 @@ const HomePage = () => {
         </button>
       </div>
 
-      {/* Movie Rows */}
       <div className="space-y-6">
-        {rows.map(({ title, key }) => (
-          <MovieRow key={key} title={title} movies={getMoviesByCategory(key)} />
-        ))}
+        <MovieRow title="Trending Movies" movies={trendingMovies.data ?? []} isLoading={trendingMovies.isLoading} mediaType="movie" />
+        <MovieRow title="Trending Series" movies={trendingSeries.data ?? []} isLoading={trendingSeries.isLoading} mediaType="tv" />
+        <MovieRow title="Popular Anime" movies={anime.data ?? []} isLoading={anime.isLoading} mediaType="movie" />
+        <MovieRow title="Action Movies" movies={action.data ?? []} isLoading={action.isLoading} mediaType="movie" />
       </div>
     </div>
   );

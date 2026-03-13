@@ -1,12 +1,34 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, Plus } from "lucide-react";
-import { getMovieById } from "@/data/movies";
+import { getMovieDetails, backdropUrl, getDisplayInfo } from "@/lib/tmdb";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const MovieDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const movie = getMovieById(Number(id));
+
+  // id format: "movie-123" or "tv-456"
+  const [mediaType, tmdbId] = (id || "movie-0").split("-") as ["movie" | "tv", string];
+
+  const { data: movie, isLoading } = useQuery({
+    queryKey: ["movie-detail", mediaType, tmdbId],
+    queryFn: () => getMovieDetails(Number(tmdbId), mediaType),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen pb-8">
+        <Skeleton className="h-[50vh] w-full" />
+        <div className="px-4 mt-4 space-y-3">
+          <Skeleton className="h-8 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      </div>
+    );
+  }
 
   if (!movie) {
     return (
@@ -16,13 +38,14 @@ const MovieDetails = () => {
     );
   }
 
+  const { title, year } = getDisplayInfo(movie as any);
+
   return (
     <div className="min-h-screen pb-8">
-      {/* Backdrop */}
       <div className="relative h-[50vh] overflow-hidden">
         <img
-          src={movie.backdrop}
-          alt={movie.title}
+          src={backdropUrl(movie.backdrop_path)}
+          alt={title}
           className="w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
@@ -34,38 +57,35 @@ const MovieDetails = () => {
         </button>
       </div>
 
-      {/* Content */}
       <div className="px-4 -mt-20 relative z-10 space-y-4">
-        <h1 className="text-3xl font-extrabold text-foreground leading-tight">
-          {movie.title}
-        </h1>
+        <h1 className="text-3xl font-extrabold text-foreground leading-tight">{title}</h1>
 
         <div className="flex items-center gap-3 text-sm">
-          <span className="text-muted-foreground">{movie.year}</span>
+          {year && <span className="text-muted-foreground">{year}</span>}
           <div className="flex items-center gap-1 text-primary">
             <Star className="w-4 h-4 fill-primary" />
-            <span className="font-semibold">{movie.rating}</span>
+            <span className="font-semibold">{movie.vote_average.toFixed(1)}</span>
           </div>
+          {movie.runtime && <span className="text-muted-foreground">{movie.runtime} min</span>}
         </div>
 
-        {/* Genres */}
+        {movie.tagline && (
+          <p className="text-sm italic text-muted-foreground">{movie.tagline}</p>
+        )}
+
         <div className="flex flex-wrap gap-2">
           {movie.genres.map((genre) => (
             <span
-              key={genre}
+              key={genre.id}
               className="px-3 py-1 rounded-full bg-muted text-xs font-medium text-muted-foreground"
             >
-              {genre}
+              {genre.name}
             </span>
           ))}
         </div>
 
-        {/* Synopsis */}
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          {movie.synopsis}
-        </p>
+        <p className="text-sm text-muted-foreground leading-relaxed">{movie.overview}</p>
 
-        {/* Actions */}
         <Button className="w-full gap-2 mt-2">
           <Plus className="w-4 h-4" />
           Add to Library
