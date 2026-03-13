@@ -1,27 +1,31 @@
 import { Link } from "react-router-dom";
-import type { Movie } from "@/data/movies";
+import { posterUrl, getDisplayInfo, type TMDBMovie } from "@/lib/tmdb";
 
 interface MovieCardProps {
-  movie: Movie;
+  movie: TMDBMovie;
+  mediaType?: "movie" | "tv";
 }
 
-const MovieCard = ({ movie }: MovieCardProps) => {
+const MovieCard = ({ movie, mediaType }: MovieCardProps) => {
+  const { title, year } = getDisplayInfo(movie);
+  const type = mediaType || movie.media_type || "movie";
+
   return (
-    <Link to={`/movie/${movie.id}`} className="group flex-shrink-0 w-[140px] md:w-[180px]">
+    <Link to={`/movie/${type}-${movie.id}`} className="group flex-shrink-0 w-[140px] md:w-[180px]">
       <div className="relative overflow-hidden rounded-lg transition-all duration-300 group-hover:shadow-[0_0_20px_hsl(var(--primary)/0.4)] group-hover:ring-1 group-hover:ring-primary/50">
         <div className="aspect-[2/3] bg-muted">
           <img
-            src={movie.poster}
-            alt={movie.title}
+            src={posterUrl(movie.poster_path)}
+            alt={title}
             className="h-full w-full object-cover"
             loading="lazy"
           />
         </div>
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 via-background/60 to-transparent p-3 pt-8">
           <h3 className="text-sm font-semibold text-foreground leading-tight line-clamp-2">
-            {movie.title}
+            {title}
           </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{movie.year}</p>
+          {year && <p className="text-xs text-muted-foreground mt-0.5">{year}</p>}
         </div>
       </div>
     </Link>
