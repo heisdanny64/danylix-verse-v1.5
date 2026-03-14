@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import type { TMDBMovie } from "@/lib/tmdb";
 import MovieCard from "./MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,12 +9,20 @@ interface MovieRowProps {
   movies: TMDBMovie[];
   isLoading?: boolean;
   mediaType?: "movie" | "tv";
+  slug?: string;
 }
 
-const MovieRow = ({ title, movies, isLoading, mediaType }: MovieRowProps) => {
+const MovieRow = ({ title, movies, isLoading, mediaType, slug }: MovieRowProps) => {
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-bold text-foreground px-4">{title}</h2>
+      <div className="flex items-center justify-between px-4">
+        <h2 className="text-lg font-bold text-foreground">{title}</h2>
+        {slug && (
+          <Link to={`/category/${slug}`} className="flex items-center gap-0.5 text-xs text-primary font-medium">
+            View All <ChevronRight className="w-3.5 h-3.5" />
+          </Link>
+        )}
+      </div>
       <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
         {isLoading
           ? Array.from({ length: 6 }).map((_, i) => (

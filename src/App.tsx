@@ -7,6 +7,9 @@ import BottomNav from "@/components/BottomNav";
 import Index from "./pages/Index.tsx";
 import SearchPage from "./pages/SearchPage.tsx";
 import MovieDetails from "./pages/MovieDetails.tsx";
+import SeriesDetails from "./pages/SeriesDetails.tsx";
+import PlayerPage from "./pages/PlayerPage.tsx";
+import CategoryPage from "./pages/CategoryPage.tsx";
 import RecommendationsPage from "./pages/RecommendationsPage.tsx";
 import LibraryPage from "./pages/LibraryPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
@@ -23,6 +26,9 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/movie/:id" element={<MovieDetails />} />
+          <Route path="/series/:id" element={<SeriesDetails />} />
+          <Route path="/player/:type/:id" element={<PlayerPage />} />
+          <Route path="/category/:slug" element={<CategoryPage />} />
           <Route path="/recommendations" element={<RecommendationsPage />} />
           <Route path="/library" element={<LibraryPage />} />
           <Route path="*" element={<NotFound />} />

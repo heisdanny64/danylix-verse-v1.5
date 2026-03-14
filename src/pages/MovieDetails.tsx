@@ -1,20 +1,31 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Star, Plus } from "lucide-react";
-import { getMovieDetails, backdropUrl, getDisplayInfo } from "@/lib/tmdb";
+import { ArrowLeft, Star, Plus, Play, Check, Download } from "lucide-react";
+import { getMovieDetails, getSimilar, backdropUrl, getDisplayInfo } from "@/lib/tmdb";
+import { useLibrary } from "@/lib/library";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import MovieRow from "@/components/MovieRow";
 
 const MovieDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { addToWatchlist, isInWatchlist } = useLibrary();
 
-  // id format: "movie-123" or "tv-456"
-  const [mediaType, tmdbId] = (id || "movie-0").split("-") as ["movie" | "tv", string];
+  // id format: "movie-123"
+  const [, tmdbIdStr] = (id || "movie-0").split("-");
+  const tmdbId = Number(tmdbIdStr);
 
   const { data: movie, isLoading } = useQuery({
-    queryKey: ["movie-detail", mediaType, tmdbId],
-    queryFn: () => getMovieDetails(Number(tmdbId), mediaType),
+    queryKey: ["movie-detail", tmdbId],
+    queryFn: () => getMovieDetails(tmdbId, "movie"),
+  });
+
+  const { data: similar } = useQuery({
+    queryKey: ["similar-movie", tmdbId],
+    queryFn: () => getSimilar(tmdbId, "movie"),
   });
 
   if (isLoading) {
@@ -39,15 +50,12 @@ const MovieDetails = () => {
   }
 
   const { title, year } = getDisplayInfo(movie as any);
+  const inWatchlist = isInWatchlist(movie.id);
 
   return (
-    <div className="min-h-screen pb-8">
+    <div className="min-h-screen pb-24">
       <div className="relative h-[50vh] overflow-hidden">
-        <img
-          src={backdropUrl(movie.backdrop_path)}
-          alt={title}
-          className="w-full h-full object-cover"
-        />
+        <img src={backdropUrl(movie.backdrop_path)} alt={title} className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
         <button
           onClick={() => navigate(-1)}
@@ -69,16 +77,11 @@ const MovieDetails = () => {
           {movie.runtime && <span className="text-muted-foreground">{movie.runtime} min</span>}
         </div>
 
-        {movie.tagline && (
-          <p className="text-sm italic text-muted-foreground">{movie.tagline}</p>
-        )}
+        {movie.tagline && <p className="text-sm italic text-muted-foreground">{movie.tagline}</p>}
 
         <div className="flex flex-wrap gap-2">
           {movie.genres.map((genre) => (
-            <span
-              key={genre.id}
-              className="px-3 py-1 rounded-full bg-muted text-xs font-medium text-muted-foreground"
-            >
+            <span key={genre.id} className="px-3 py-1 rounded-full bg-muted text-xs font-medium text-muted-foreground">
               {genre.name}
             </span>
           ))}
@@ -86,11 +89,37 @@ const MovieDetails = () => {
 
         <p className="text-sm text-muted-foreground leading-relaxed">{movie.overview}</p>
 
-        <Button className="w-full gap-2 mt-2">
-          <Plus className="w-4 h-4" />
-          Add to Library
-        </Button>
+        <div className="flex gap-2">
+          <Button className="flex-1 gap-1.5" onClick={() => navigate(`/player/movie/${tmdbId}`)}>
+            <Play className="w-4 h-4 fill-current" />
+            Watch Now
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => {
+              const m = { id: movie.id, title: movie.title, overview: movie.overview, poster_path: movie.poster_path, backdrop_path: movie.backdrop_path, vote_average: movie.vote_average, release_date: movie.release_date, genre_ids: movie.genres.map(g => g.id) } as any;
+              addToWatchlist(m, "movie");
+            }}
+          >
+            {inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => toast({ title: "Coming Soon", description: "Download feature is not yet available." })}
+          >
+            <Download className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
+
+      {/* More Like This */}
+      {similar && similar.length > 0 && (
+        <div className="mt-8">
+          <MovieRow title="More Like This" movies={similar} mediaType="movie" />
+        </div>
+      )}
     </div>
   );
 };
