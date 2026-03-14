@@ -9,9 +9,16 @@ const tabs = [
 
 const BottomNav = () => {
   const location = useLocation();
+  const path = location.pathname;
 
-  // Hide on movie details and search pages
-  if (location.pathname.startsWith("/movie/") || location.pathname === "/search") {
+  // Hide on movie/series details, player, search, and category pages
+  if (
+    path.startsWith("/movie/") ||
+    path.startsWith("/series/") ||
+    path.startsWith("/player/") ||
+    path.startsWith("/category/") ||
+    path === "/search"
+  ) {
     return null;
   }
 

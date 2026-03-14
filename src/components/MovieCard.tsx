@@ -4,14 +4,17 @@ import { posterUrl, getDisplayInfo, type TMDBMovie } from "@/lib/tmdb";
 interface MovieCardProps {
   movie: TMDBMovie;
   mediaType?: "movie" | "tv";
+  compact?: boolean;
 }
 
-const MovieCard = ({ movie, mediaType }: MovieCardProps) => {
+const MovieCard = ({ movie, mediaType, compact }: MovieCardProps) => {
   const { title, year } = getDisplayInfo(movie);
   const type = mediaType || movie.media_type || "movie";
 
+  const link = type === "tv" ? `/series/${movie.id}` : `/movie/movie-${movie.id}`;
+
   return (
-    <Link to={`/movie/${type}-${movie.id}`} className="group flex-shrink-0 w-[140px] md:w-[180px]">
+    <Link to={link} className={`group flex-shrink-0 ${compact ? "w-full" : "w-[140px] md:w-[180px]"}`}>
       <div className="relative overflow-hidden rounded-lg transition-all duration-300 group-hover:shadow-[0_0_20px_hsl(var(--primary)/0.4)] group-hover:ring-1 group-hover:ring-primary/50">
         <div className="aspect-[2/3] bg-muted">
           <img
