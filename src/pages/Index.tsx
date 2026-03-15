@@ -13,9 +13,9 @@ const HomePage = () => {
   const navigate = useNavigate();
 
   const hero = useQuery({ queryKey: ["trending-hero"], queryFn: () => getTrending("all", "day") });
-  const trendingToday = useQuery({ queryKey: ["trending-today"], queryFn: () => getTrending("all", "day") });
-  const pickedForYou = useQuery({ queryKey: ["picked-for-you"], queryFn: () => getPopular("movie") });
-  const popularWeek = useQuery({ queryKey: ["popular-week"], queryFn: () => getTrending("all", "week") });
+  const trendingToday = useQuery({ queryKey: ["trending-today"], queryFn: async () => sortByFreshness(await getTrending("all", "day")) });
+  const pickedForYou = useQuery({ queryKey: ["picked-for-you"], queryFn: async () => sortByFreshness(await getPopular("movie")) });
+  const popularWeek = useQuery({ queryKey: ["popular-week"], queryFn: async () => sortByFreshness(await getTrending("all", "week")) });
   const topRated = useQuery({ queryKey: ["top-rated-movies"], queryFn: () => getTopRated("movie") });
   const action = useQuery({ queryKey: ["action-movies"], queryFn: () => getByGenre(GENRE_IDS.action, "movie") });
   const comedy = useQuery({ queryKey: ["comedy-movies"], queryFn: () => getByGenre(GENRE_IDS.comedy, "movie") });
