@@ -26,7 +26,7 @@ const MovieRow = ({ title, movies, isLoading, mediaType, slug }: MovieRowProps) 
       <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
         {isLoading
           ? Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-[140px] md:w-[180px]">
+              <div key={i} className="flex-shrink-0" style={{ width: "clamp(130px, 22vw, 220px)" }}>
                 <Skeleton className="aspect-[2/3] rounded-lg" />
               </div>
             ))

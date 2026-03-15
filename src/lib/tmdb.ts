@@ -20,6 +20,7 @@ export interface TMDBMovie {
   genre_ids: number[];
   media_type?: string;
   original_language?: string;
+  origin_country?: string[];
 }
 
 export interface TMDBMovieDetail {
@@ -37,6 +38,8 @@ export interface TMDBMovieDetail {
   tagline?: string;
   number_of_seasons?: number;
   seasons?: TMDBSeason[];
+  original_language?: string;
+  origin_country?: string[];
 }
 
 export interface TMDBSeason {
@@ -81,47 +84,51 @@ export async function getTrending(mediaType: "movie" | "tv" | "all" = "all", tim
   return data.results;
 }
 
-export async function getPopular(mediaType: "movie" | "tv" = "movie") {
-  const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/${mediaType}/popular`);
+export async function getPopular(mediaType: "movie" | "tv" = "movie", page = 1) {
+  const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/${mediaType}/popular`, { page: String(page) });
   return data.results;
 }
 
-export async function getTopRated(mediaType: "movie" | "tv" = "movie") {
-  const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/${mediaType}/top_rated`);
+export async function getTopRated(mediaType: "movie" | "tv" = "movie", page = 1) {
+  const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/${mediaType}/top_rated`, { page: String(page) });
   return data.results;
 }
 
-export async function getByGenre(genreId: number, mediaType: "movie" | "tv" = "movie") {
+export async function getByGenre(genreId: number, mediaType: "movie" | "tv" = "movie", page = 1) {
   const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/discover/${mediaType}`, {
     with_genres: String(genreId),
     sort_by: "popularity.desc",
+    page: String(page),
   });
   return data.results;
 }
 
-export async function getByGenreAndLanguage(genreId: number, language: string, mediaType: "movie" | "tv" = "tv") {
+export async function getByGenreAndLanguage(genreId: number, language: string, mediaType: "movie" | "tv" = "tv", page = 1) {
   const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/discover/${mediaType}`, {
     with_genres: String(genreId),
     with_original_language: language,
     sort_by: "popularity.desc",
+    page: String(page),
   });
   return data.results;
 }
 
-export async function getByLanguage(language: string, mediaType: "movie" | "tv" = "tv") {
+export async function getByLanguage(language: string, mediaType: "movie" | "tv" = "tv", page = 1) {
   const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/discover/${mediaType}`, {
     with_original_language: language,
     sort_by: "popularity.desc",
+    page: String(page),
   });
   return data.results;
 }
 
-export async function getHiddenGems(mediaType: "movie" | "tv" = "movie") {
+export async function getHiddenGems(mediaType: "movie" | "tv" = "movie", page = 1) {
   const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/discover/${mediaType}`, {
     sort_by: "vote_average.desc",
     "vote_count.gte": "50",
     "vote_count.lte": "500",
     "vote_average.gte": "7.5",
+    page: String(page),
   });
   return data.results;
 }
@@ -156,6 +163,28 @@ export function getDisplayInfo(m: TMDBMovie | TMDBMovieDetail) {
   return { title, year };
 }
 
+// Anime detection — requires Japanese language + animation genre
+export function isAnime(item: TMDBMovie | TMDBMovieDetail): boolean {
+  const isJapanese = item.original_language === "ja";
+  const genreIds = 'genre_ids' in item ? item.genre_ids : (item.genres?.map(g => g.id) || []);
+  const isAnimation = genreIds.includes(16);
+  return isJapanese && isAnimation;
+}
+
+// Freshness scoring for prioritizing recent content
+function getFreshnessScore(item: TMDBMovie): number {
+  const date = item.release_date || item.first_air_date;
+  if (!date) return 0;
+  const itemDate = new Date(date).getTime();
+  const now = Date.now();
+  const diffDays = Math.max(1, (now - itemDate) / (1000 * 60 * 60 * 24));
+  return (item.vote_average || 0) * 10 + 1000 / diffDays;
+}
+
+export function sortByFreshness(items: TMDBMovie[]): TMDBMovie[] {
+  return [...items].sort((a, b) => getFreshnessScore(b) - getFreshnessScore(a));
+}
+
 export const GENRE_IDS = {
   action: 28,
   animation: 16,
@@ -171,24 +200,24 @@ export const GENRE_IDS = {
 export interface CategoryConfig {
   title: string;
   mediaType: "movie" | "tv";
-  fetchFn: () => Promise<TMDBMovie[]>;
+  fetchFn: (page?: number) => Promise<TMDBMovie[]>;
 }
 
 export const CATEGORY_MAP: Record<string, CategoryConfig> = {
   "trending-today": { title: "Trending Today", mediaType: "movie", fetchFn: () => getTrending("all", "day") },
-  "picked-for-you": { title: "Picked For You", mediaType: "movie", fetchFn: () => getPopular("movie") },
+  "picked-for-you": { title: "Picked For You", mediaType: "movie", fetchFn: (p) => getPopular("movie", p) },
   "popular-this-week": { title: "Popular This Week", mediaType: "movie", fetchFn: () => getTrending("all", "week") },
-  "top-rated-movies": { title: "Top Rated Movies", mediaType: "movie", fetchFn: () => getTopRated("movie") },
-  "action-movies": { title: "Action Movies", mediaType: "movie", fetchFn: () => getByGenre(GENRE_IDS.action, "movie") },
-  "comedy-movies": { title: "Comedy Movies", mediaType: "movie", fetchFn: () => getByGenre(GENRE_IDS.comedy, "movie") },
-  "scifi-movies": { title: "Sci-Fi Movies", mediaType: "movie", fetchFn: () => getByGenre(GENRE_IDS.sciFi, "movie") },
-  "horror-movies": { title: "Horror Movies", mediaType: "movie", fetchFn: () => getByGenre(GENRE_IDS.horror, "movie") },
-  "popular-series": { title: "Popular Series", mediaType: "tv", fetchFn: () => getPopular("tv") },
-  "crime-series": { title: "Crime Series", mediaType: "tv", fetchFn: () => getByGenre(GENRE_IDS.crime, "tv") },
-  "mystery-series": { title: "Mystery Series", mediaType: "tv", fetchFn: () => getByGenre(GENRE_IDS.mystery, "tv") },
-  "popular-anime": { title: "Popular Anime", mediaType: "tv", fetchFn: () => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv") },
-  "trending-anime": { title: "Trending Anime", mediaType: "tv", fetchFn: () => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv") },
-  "korean-dramas": { title: "Korean Dramas", mediaType: "tv", fetchFn: () => getByLanguage("ko", "tv") },
-  "japanese-series": { title: "Japanese Series", mediaType: "tv", fetchFn: () => getByLanguage("ja", "tv") },
-  "hidden-gems": { title: "Hidden Gems", mediaType: "movie", fetchFn: () => getHiddenGems("movie") },
+  "top-rated-movies": { title: "Top Rated Movies", mediaType: "movie", fetchFn: (p) => getTopRated("movie", p) },
+  "action-movies": { title: "Action Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.action, "movie", p) },
+  "comedy-movies": { title: "Comedy Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.comedy, "movie", p) },
+  "scifi-movies": { title: "Sci-Fi Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.sciFi, "movie", p) },
+  "horror-movies": { title: "Horror Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.horror, "movie", p) },
+  "popular-series": { title: "Popular Series", mediaType: "tv", fetchFn: (p) => getPopular("tv", p) },
+  "crime-series": { title: "Crime Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.crime, "tv", p) },
+  "mystery-series": { title: "Mystery Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.mystery, "tv", p) },
+  "popular-anime": { title: "Popular Anime", mediaType: "tv", fetchFn: (p) => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv", p) },
+  "trending-anime": { title: "Trending Anime", mediaType: "tv", fetchFn: (p) => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv", p) },
+  "korean-dramas": { title: "Korean Dramas", mediaType: "tv", fetchFn: (p) => getByLanguage("ko", "tv", p) },
+  "japanese-series": { title: "Japanese Series", mediaType: "tv", fetchFn: (p) => getByLanguage("ja", "tv", p) },
+  "hidden-gems": { title: "Hidden Gems", mediaType: "movie", fetchFn: (p) => getHiddenGems("movie", p) },
 };
