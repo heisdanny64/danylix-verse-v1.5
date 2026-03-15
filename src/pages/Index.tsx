@@ -6,7 +6,7 @@ import HeroBanner from "@/components/HeroBanner";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 import {
   getTrending, getPopular, getTopRated, getByGenre, getByGenreAndLanguage,
-  getByLanguage, getHiddenGems, GENRE_IDS,
+  getByLanguage, getHiddenGems, GENRE_IDS, sortByFreshness,
 } from "@/lib/tmdb";
 
 const HomePage = () => {
