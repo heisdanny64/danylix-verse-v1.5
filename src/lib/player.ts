@@ -3,6 +3,8 @@ export interface Channel {
   name: string;
   label: string;
   disabled: boolean;
+  sandbox: string;
+  allow: string;
   getUrl: (type: "movie" | "tv", tmdbId: number, season?: number, episode?: number) => string;
 }
 
@@ -12,11 +14,13 @@ export const CHANNELS: Channel[] = [
     name: "Channel 1",
     label: "Channel 1",
     disabled: false,
+    sandbox: "allow-scripts allow-same-origin allow-forms allow-popups",
+    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
     getUrl: (type, tmdbId, season, episode) => {
       if (type === "tv" && season && episode) {
-        return `https://vidsrc.xyz/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`;
+        return `https://vidsrc.icu/embed/tv/${tmdbId}/${season}/${episode}`;
       }
-      return `https://vidsrc.xyz/embed/movie?tmdb=${tmdbId}`;
+      return `https://vidsrc.icu/embed/movie/${tmdbId}`;
     },
   },
   {
@@ -24,6 +28,8 @@ export const CHANNELS: Channel[] = [
     name: "Channel 2",
     label: "Channel 2",
     disabled: false,
+    sandbox: "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation",
+    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
     getUrl: (type, tmdbId, season, episode) => {
       if (type === "tv" && season && episode) {
         return `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`;
@@ -36,6 +42,8 @@ export const CHANNELS: Channel[] = [
     name: "Channel 3",
     label: "Coming Soon",
     disabled: true,
+    sandbox: "",
+    allow: "",
     getUrl: () => "",
   },
 ];
