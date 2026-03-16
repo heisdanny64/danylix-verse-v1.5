@@ -262,7 +262,7 @@ const PlayerPage = () => {
                 className="w-full h-full border-0"
                 allowFullScreen
                 allow={channel.allow}
-                sandbox={channel.sandbox}
+                {...(channel.sandbox ? { sandbox: channel.sandbox } : {})}
                 onLoad={handleIframeLoad}
                 referrerPolicy="origin-when-cross-origin"
               />
