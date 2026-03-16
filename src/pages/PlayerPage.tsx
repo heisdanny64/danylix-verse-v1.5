@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minimize } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minimize, Play, ShieldCheck, RefreshCw, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { CHANNELS } from "@/lib/player";
 import { getMovieDetails, getSeasonDetails, getDisplayInfo, isAnime } from "@/lib/tmdb";
@@ -9,16 +9,19 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 
+type PlayerState = "loading" | "ready" | "error";
+
 const PlayerPage = () => {
   const { type, id } = useParams<{ type: string; id: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [activeChannel, setActiveChannel] = useState(0);
   const [subDub, setSubDub] = useState<"sub" | "dub">("sub");
-  const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [shieldActive, setShieldActive] = useState(true);
+  const [playerState, setPlayerState] = useState<PlayerState>("loading");
   const videoWrapperRef = useRef<HTMLDivElement>(null);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const { updateProgress } = useLibrary();
 
   const mediaType = (type as "movie" | "tv") || "movie";
@@ -42,6 +45,9 @@ const PlayerPage = () => {
   const canPrev = mediaType === "tv" && episode > 1;
   const canNext = mediaType === "tv" && episode < totalEpisodes;
   const animeTitle = details ? isAnime(details as any) : false;
+  const channel = CHANNELS[activeChannel];
+  const playerUrl = (!channel.disabled && tmdbId) ? channel.getUrl(mediaType, tmdbId, season, episode) : "";
+  const displayInfo = details ? getDisplayInfo(details as any) : null;
 
   // Save progress on mount
   useEffect(() => {
@@ -64,28 +70,53 @@ const PlayerPage = () => {
     }
   }, [details, mediaType, season, episode]);
 
-  // Auto-hide controls
-  const resetHideTimer = useCallback(() => {
-    setControlsVisible(true);
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => setControlsVisible(false), 4000);
-  }, []);
-
+  // Reset shield and player state when channel or URL changes
   useEffect(() => {
-    resetHideTimer();
-    return () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); };
-  }, []);
+    setShieldActive(true);
+    setPlayerState("loading");
+    if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+    loadTimeoutRef.current = setTimeout(() => {
+      // If still loading after 10s, assume it might have loaded (iframes don't reliably fire events cross-origin)
+      setPlayerState((prev) => (prev === "loading" ? "ready" : prev));
+    }, 10000);
+    return () => { if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current); };
+  }, [playerUrl, activeChannel]);
 
-  // Fullscreen change listener
+  // Dev logging
   useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    if (import.meta.env.DEV && playerUrl) {
+      console.log("[Player Debug]", {
+        channel: channel.name,
+        url: playerUrl,
+        mediaType,
+        tmdbId,
+        season: mediaType === "tv" ? season : undefined,
+        episode: mediaType === "tv" ? episode : undefined,
+        sandbox: channel.sandbox,
+        allow: channel.allow,
+      });
+    }
+  }, [playerUrl, activeChannel]);
+
+  // Fullscreen change listener with orientation unlock
+  useEffect(() => {
+    const handler = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (!fs) {
+        try {
+          (screen.orientation as any)?.unlock?.();
+        } catch {}
+      }
+    };
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
-  const channel = CHANNELS[activeChannel];
-  const playerUrl = (!channel.disabled && tmdbId) ? channel.getUrl(mediaType, tmdbId, season, episode) : "";
-  const displayInfo = details ? getDisplayInfo(details as any) : null;
+  const handleIframeLoad = useCallback(() => {
+    setPlayerState("ready");
+    if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+  }, []);
 
   const goEpisode = (ep: number) => {
     navigate(`/player/tv/${tmdbId}?season=${season}&episode=${ep}`, { replace: true });
@@ -100,14 +131,37 @@ const PlayerPage = () => {
     setActiveChannel(index);
   };
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = async () => {
     const el = videoWrapperRef.current;
     if (!el) return;
     if (!document.fullscreenElement) {
-      el.requestFullscreen?.();
+      try {
+        await el.requestFullscreen();
+        try {
+          await (screen.orientation as any)?.lock?.("landscape");
+        } catch {}
+      } catch (e) {
+        console.warn("Fullscreen request failed", e);
+      }
     } else {
-      document.exitFullscreen?.();
+      try {
+        await document.exitFullscreen();
+      } catch {}
     }
+  };
+
+  const handleRetry = () => {
+    setPlayerState("loading");
+    setShieldActive(true);
+    // Force iframe re-render by toggling channel back
+    const current = activeChannel;
+    setActiveChannel(-1);
+    setTimeout(() => setActiveChannel(current), 50);
+  };
+
+  const dismissShield = () => {
+    setShieldActive(false);
+    setPlayerState("ready");
   };
 
   // Loading state
@@ -118,21 +172,6 @@ const PlayerPage = () => {
           <Skeleton className="h-8 w-48" />
           <Skeleton className="aspect-video w-full rounded-2xl" />
           <Skeleton className="h-10 w-full" />
-        </div>
-      </div>
-    );
-  }
-
-  // Error state — no valid URL
-  if (!playerUrl && !CHANNELS[activeChannel].disabled) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <div className="text-center space-y-3">
-          <h3 className="text-lg font-semibold text-foreground">Playback unavailable</h3>
-          <p className="text-sm text-muted-foreground">This source could not be loaded. Please try another channel.</p>
-          <Button variant="outline" onClick={() => navigate(-1)}>
-            <ArrowLeft className="w-4 h-4 mr-2" /> Go Back
-          </Button>
         </div>
       </div>
     );
@@ -211,17 +250,21 @@ const PlayerPage = () => {
         <div className="w-full max-w-[1100px]">
           <div
             ref={videoWrapperRef}
-            className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black"
-            onClick={resetHideTimer}
+            className={`relative w-full overflow-hidden bg-black ${
+              isFullscreen ? "fixed inset-0 z-50 rounded-none" : "aspect-video rounded-2xl"
+            }`}
           >
-            {playerUrl ? (
+            {/* Iframe */}
+            {playerUrl && activeChannel >= 0 ? (
               <iframe
-                key={`${playerUrl}-${subDub}`}
+                key={`${playerUrl}-${subDub}-${activeChannel}`}
                 src={playerUrl}
                 className="w-full h-full border-0"
                 allowFullScreen
-                allow="autoplay; encrypted-media; fullscreen"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                allow={channel.allow}
+                sandbox={channel.sandbox}
+                onLoad={handleIframeLoad}
+                referrerPolicy="origin-when-cross-origin"
               />
             ) : (
               <div className="flex items-center justify-center h-full">
@@ -229,34 +272,79 @@ const PlayerPage = () => {
               </div>
             )}
 
-            {/* Gesture overlay — tap to show/hide controls */}
-            <div
-              className="absolute inset-0 z-10"
+            {/* Dismissable shield overlay — absorbs first tap to reduce ads */}
+            {shieldActive && playerUrl && (
+              <div
+                className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
+                onClick={dismissShield}
+                style={{ background: "rgba(0,0,0,0.3)" }}
+              >
+                <div className="flex flex-col items-center gap-3 text-center">
+                  {playerState === "loading" && (
+                    <>
+                      <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                      <p className="text-sm text-white/80">Loading {channel.name}...</p>
+                    </>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dismissShield();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+                  >
+                    <Play className="w-4 h-4" /> Tap to Watch
+                  </button>
+                  <p className="text-xs text-white/50">Shield active — blocks ad clicks</p>
+                </div>
+              </div>
+            )}
+
+            {/* Re-shield button — shown when shield is dismissed */}
+            {!shieldActive && playerUrl && (
+              <button
+                onClick={() => setShieldActive(true)}
+                className="absolute top-3 left-3 z-20 w-8 h-8 rounded-full bg-background/60 backdrop-blur-sm flex items-center justify-center text-foreground/70 hover:bg-background/80 transition-colors"
+                title="Re-enable ad shield"
+              >
+                <ShieldCheck className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Fullscreen button overlay */}
+            <button
               onClick={(e) => {
                 e.stopPropagation();
-                setControlsVisible((v) => !v);
-                resetHideTimer();
+                toggleFullscreen();
               }}
-              style={{ background: "transparent" }}
-            />
-
-            {/* Minimal overlay controls (fullscreen button) */}
-            <div
-              className={`absolute bottom-3 right-3 z-20 transition-opacity duration-300 ${
-                controlsVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-              }`}
+              className="absolute bottom-3 right-3 z-20 w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center text-foreground hover:bg-background/90 transition-colors"
             >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleFullscreen();
-                }}
-                className="w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center text-foreground hover:bg-background/90 transition-colors"
-              >
-                {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-              </button>
-            </div>
+              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+            </button>
           </div>
+
+          {/* Error state */}
+          {playerState === "error" && (
+            <div className="mt-4 p-4 rounded-xl bg-card border border-border text-center space-y-3">
+              <p className="text-sm font-medium text-foreground">Source unavailable — {channel.name}</p>
+              <p className="text-xs text-muted-foreground">This channel could not load. Try another channel or retry.</p>
+              <div className="flex items-center justify-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleRetry} className="gap-1">
+                  <RefreshCw className="w-3 h-3" /> Retry
+                </Button>
+                {CHANNELS.filter((c) => !c.disabled && c.id !== channel.id).map((c, i) => (
+                  <Button
+                    key={c.id}
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleChannelSwitch(CHANNELS.indexOf(c))}
+                  >
+                    Switch to {c.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
