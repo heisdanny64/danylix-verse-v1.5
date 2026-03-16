@@ -18,9 +18,9 @@ export const CHANNELS: Channel[] = [
     allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
     getUrl: (type, tmdbId, season, episode) => {
       if (type === "tv" && season && episode) {
-        return `https://vidsrc.me/embed/tv/${tmdbId}/${season}/${episode}`;
+        return `https://vidsrc-embed.ru/embed/tv/${tmdbId}/${season}/${episode}`;
       }
-      return `https://vidsrc.me/embed/movie/${tmdbId}`;
+      return `https://vidsrc-embed.ru/embed/movie/${tmdbId}`;
     },
   },
   {
