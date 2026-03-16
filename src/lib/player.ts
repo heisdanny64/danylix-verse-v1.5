@@ -18,9 +18,9 @@ export const CHANNELS: Channel[] = [
     allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
     getUrl: (type, tmdbId, season, episode) => {
       if (type === "tv" && season && episode) {
-        return `https://vidsrc.icu/embed/tv/${tmdbId}/${season}/${episode}`;
+        return `https://vsembed.ru/embed/tv/${tmdbId}/${season}/${episode}`;
       }
-      return `https://vidsrc.icu/embed/movie/${tmdbId}`;
+      return `https://vsembed.ru/embed/movie/${tmdbId}`;
     },
   },
   {
@@ -28,7 +28,7 @@ export const CHANNELS: Channel[] = [
     name: "Channel 2",
     label: "Channel 2",
     disabled: false,
-    sandbox: "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation",
+    sandbox: "",
     allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
     getUrl: (type, tmdbId, season, episode) => {
       if (type === "tv" && season && episode) {
