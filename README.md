@@ -151,20 +151,7 @@ Poster grids and layout automatically adapt to different screen sizes.
 
 The **download feature is currently in development** and will be released in a future update.
 
----
 
-# App Preview
-
-### Home Page
-![Home Screenshot](screenshots/home.jpg)
-
-### Video Player
-![Player Screenshot](screenshots/player.jpg)
-
-### Anime Section
-![Anime Screenshot](screenshots/anime.jpg)
-
----
 
 # Technologies Used
 
