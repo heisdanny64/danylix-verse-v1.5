@@ -5,9 +5,10 @@ import MovieRow from "@/components/MovieRow";
 import HeroBanner from "@/components/HeroBanner";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 import {
-  getTrending, getPopular, getTopRated, getByGenre, getByGenreAndLanguage,
-  getByLanguage, getHiddenGems, GENRE_IDS, sortByFreshness,
+  getTrending, getPopular, getTopRated, getByGenre, getByLanguage,
+  getHiddenGems, GENRE_IDS, sortByFreshness,
 } from "@/lib/tmdb";
+import { getTopAnime, getCurrentSeasonAnime, getUpcomingAnime } from "@/lib/jikan";
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -24,15 +25,17 @@ const HomePage = () => {
   const popularSeries = useQuery({ queryKey: ["popular-series"], queryFn: () => getPopular("tv") });
   const crime = useQuery({ queryKey: ["crime-series"], queryFn: () => getByGenre(GENRE_IDS.crime, "tv") });
   const mystery = useQuery({ queryKey: ["mystery-series"], queryFn: () => getByGenre(GENRE_IDS.mystery, "tv") });
-  const anime = useQuery({ queryKey: ["popular-anime"], queryFn: () => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv") });
-  const trendingAnime = useQuery({ queryKey: ["trending-anime"], queryFn: () => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv") });
   const kDrama = useQuery({ queryKey: ["korean-dramas"], queryFn: () => getByLanguage("ko", "tv") });
   const jpSeries = useQuery({ queryKey: ["japanese-series"], queryFn: () => getByLanguage("ja", "tv") });
   const hiddenGems = useQuery({ queryKey: ["hidden-gems"], queryFn: () => getHiddenGems("movie") });
 
+  // Jikan-powered anime rows
+  const popularAnime = useQuery({ queryKey: ["popular-anime-jikan"], queryFn: () => getTopAnime() });
+  const currentSeason = useQuery({ queryKey: ["current-season-anime"], queryFn: () => getCurrentSeasonAnime() });
+  const upcomingAnime = useQuery({ queryKey: ["upcoming-anime"], queryFn: () => getUpcomingAnime() });
+
   return (
     <div className="pb-24 min-h-screen">
-      {/* Header */}
       <header className="absolute top-0 left-0 right-0 z-20 px-4 pt-6 pb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">
           <span className="text-foreground">D.</span>
@@ -41,10 +44,8 @@ const HomePage = () => {
         <p className="text-xs text-muted-foreground mt-0.5">Danylix Verse</p>
       </header>
 
-      {/* Hero Banner */}
       <HeroBanner movies={hero.data ?? []} />
 
-      {/* Search */}
       <div className="px-4 my-4">
         <button
           onClick={() => navigate("/search")}
@@ -68,8 +69,9 @@ const HomePage = () => {
         <MovieRow title="Popular Series" movies={popularSeries.data ?? []} isLoading={popularSeries.isLoading} mediaType="tv" slug="popular-series" />
         <MovieRow title="Crime Series" movies={crime.data ?? []} isLoading={crime.isLoading} mediaType="tv" slug="crime-series" />
         <MovieRow title="Mystery Series" movies={mystery.data ?? []} isLoading={mystery.isLoading} mediaType="tv" slug="mystery-series" />
-        <MovieRow title="Popular Anime" movies={anime.data ?? []} isLoading={anime.isLoading} mediaType="tv" slug="popular-anime" />
-        <MovieRow title="Trending Anime" movies={trendingAnime.data ?? []} isLoading={trendingAnime.isLoading} mediaType="tv" slug="trending-anime" />
+        <MovieRow title="Popular Anime" movies={popularAnime.data ?? []} isLoading={popularAnime.isLoading} mediaType="anime" slug="popular-anime" />
+        <MovieRow title="Current Season" movies={currentSeason.data ?? []} isLoading={currentSeason.isLoading} mediaType="anime" slug="current-season-anime" />
+        <MovieRow title="Upcoming Anime" movies={upcomingAnime.data ?? []} isLoading={upcomingAnime.isLoading} mediaType="anime" slug="upcoming-anime" />
         <MovieRow title="Korean Dramas" movies={kDrama.data ?? []} isLoading={kDrama.isLoading} mediaType="tv" slug="korean-dramas" />
         <MovieRow title="Japanese Series" movies={jpSeries.data ?? []} isLoading={jpSeries.isLoading} mediaType="tv" slug="japanese-series" />
         <MovieRow title="Hidden Gems" movies={hiddenGems.data ?? []} isLoading={hiddenGems.isLoading} mediaType="movie" slug="hidden-gems" />
