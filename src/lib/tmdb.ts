@@ -3,12 +3,13 @@ const BASE = "https://api.themoviedb.org/3";
 
 export const IMG_BASE = "https://image.tmdb.org/t/p";
 export const posterUrl = (path: string | null, size = "w342") =>
-  path ? `${IMG_BASE}/${size}${path}` : "/placeholder.svg";
+  path ? (path.startsWith("http") ? path : `${IMG_BASE}/${size}${path}`) : "/placeholder.svg";
 export const backdropUrl = (path: string | null, size = "w780") =>
-  path ? `${IMG_BASE}/${size}${path}` : "/placeholder.svg";
+  path ? (path.startsWith("http") ? path : `${IMG_BASE}/${size}${path}`) : "/placeholder.svg";
 
 export interface TMDBMovie {
   id: number;
+  mal_id?: number;
   title?: string;
   name?: string;
   overview: string;
