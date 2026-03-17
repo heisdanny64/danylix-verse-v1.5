@@ -5,36 +5,43 @@ export interface Channel {
   disabled: boolean;
   sandbox: string;
   allow: string;
-  getUrl: (type: "movie" | "tv", tmdbId: number, season?: number, episode?: number) => string;
+  supportsAnime: boolean;
+  getUrl: (type: "movie" | "tv" | "anime", id: number, season?: number, episode?: number, subDub?: "sub" | "dub") => string;
 }
 
 export const CHANNELS: Channel[] = [
   {
     id: 1,
     name: "Channel 1",
-    label: "Channel 1",
+    label: "VidSrc",
     disabled: false,
-    sandbox: "allow-scripts allow-same-origin allow-forms allow-popups",
+    sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation",
     allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
-    getUrl: (type, tmdbId, season, episode) => {
+    supportsAnime: false,
+    getUrl: (type, id, season, episode) => {
+      if (type === "anime") return "";
       if (type === "tv" && season && episode) {
-        return `https://vidsrc-embed.ru/embed/tv/${tmdbId}/${season}/${episode}`;
+        return `https://vidsrc.xyz/embed/tv/${id}/${season}/${episode}`;
       }
-      return `https://vidsrc-embed.ru/embed/movie/${tmdbId}`;
+      return `https://vidsrc.xyz/embed/movie/${id}`;
     },
   },
   {
     id: 2,
     name: "Channel 2",
-    label: "Channel 2",
+    label: "VidLink",
     disabled: false,
     sandbox: "",
-    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
-    getUrl: (type, tmdbId, season, episode) => {
-      if (type === "tv" && season && episode) {
-        return `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`;
+    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture; presentation",
+    supportsAnime: true,
+    getUrl: (type, id, season, episode, subDub) => {
+      if (type === "anime") {
+        return `https://vidlink.pro/anime/${id}/${episode || 1}/${subDub || "sub"}`;
       }
-      return `https://vidlink.pro/movie/${tmdbId}`;
+      if (type === "tv" && season && episode) {
+        return `https://vidlink.pro/tv/${id}/${season}/${episode}`;
+      }
+      return `https://vidlink.pro/movie/${id}`;
     },
   },
   {
@@ -44,6 +51,7 @@ export const CHANNELS: Channel[] = [
     disabled: true,
     sandbox: "",
     allow: "",
+    supportsAnime: false,
     getUrl: () => "",
   },
 ];
