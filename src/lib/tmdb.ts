@@ -3,12 +3,13 @@ const BASE = "https://api.themoviedb.org/3";
 
 export const IMG_BASE = "https://image.tmdb.org/t/p";
 export const posterUrl = (path: string | null, size = "w342") =>
-  path ? `${IMG_BASE}/${size}${path}` : "/placeholder.svg";
+  path ? (path.startsWith("http") ? path : `${IMG_BASE}/${size}${path}`) : "/placeholder.svg";
 export const backdropUrl = (path: string | null, size = "w780") =>
-  path ? `${IMG_BASE}/${size}${path}` : "/placeholder.svg";
+  path ? (path.startsWith("http") ? path : `${IMG_BASE}/${size}${path}`) : "/placeholder.svg";
 
 export interface TMDBMovie {
   id: number;
+  mal_id?: number;
   title?: string;
   name?: string;
   overview: string;
@@ -199,9 +200,12 @@ export const GENRE_IDS = {
 // Category config for View All pages
 export interface CategoryConfig {
   title: string;
-  mediaType: "movie" | "tv";
+  mediaType: "movie" | "tv" | "anime";
   fetchFn: (page?: number) => Promise<TMDBMovie[]>;
 }
+
+// Lazy import to avoid circular deps
+const jikanImport = () => import("@/lib/jikan");
 
 export const CATEGORY_MAP: Record<string, CategoryConfig> = {
   "trending-today": { title: "Trending Today", mediaType: "movie", fetchFn: () => getTrending("all", "day") },
@@ -215,8 +219,9 @@ export const CATEGORY_MAP: Record<string, CategoryConfig> = {
   "popular-series": { title: "Popular Series", mediaType: "tv", fetchFn: (p) => getPopular("tv", p) },
   "crime-series": { title: "Crime Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.crime, "tv", p) },
   "mystery-series": { title: "Mystery Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.mystery, "tv", p) },
-  "popular-anime": { title: "Popular Anime", mediaType: "tv", fetchFn: (p) => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv", p) },
-  "trending-anime": { title: "Trending Anime", mediaType: "tv", fetchFn: (p) => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv", p) },
+  "popular-anime": { title: "Popular Anime", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getTopAnime(p)) },
+  "current-season-anime": { title: "Current Season", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getCurrentSeasonAnime(p)) },
+  "upcoming-anime": { title: "Upcoming Anime", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getUpcomingAnime(p)) },
   "korean-dramas": { title: "Korean Dramas", mediaType: "tv", fetchFn: (p) => getByLanguage("ko", "tv", p) },
   "japanese-series": { title: "Japanese Series", mediaType: "tv", fetchFn: (p) => getByLanguage("ja", "tv", p) },
   "hidden-gems": { title: "Hidden Gems", mediaType: "movie", fetchFn: (p) => getHiddenGems("movie", p) },

@@ -3,7 +3,8 @@ import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minimize, Play, ShieldCheck, RefreshCw, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { CHANNELS } from "@/lib/player";
-import { getMovieDetails, getSeasonDetails, getDisplayInfo, isAnime } from "@/lib/tmdb";
+import { getMovieDetails, getSeasonDetails, getDisplayInfo } from "@/lib/tmdb";
+import { getAnimeById } from "@/lib/jikan";
 import { useLibrary } from "@/lib/library";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,8 +16,18 @@ const PlayerPage = () => {
   const { type, id } = useParams<{ type: string; id: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [activeChannel, setActiveChannel] = useState(0);
-  const [subDub, setSubDub] = useState<"sub" | "dub">("sub");
+
+  const mediaType = (type as "movie" | "tv" | "anime") || "movie";
+  const contentId = Number(id);
+  const season = Number(searchParams.get("season")) || 1;
+  const episode = Number(searchParams.get("episode")) || 1;
+  const initialSubDub = (searchParams.get("subDub") as "sub" | "dub") || "sub";
+
+  // For anime, auto-select Channel 2 (only one supporting anime)
+  const defaultChannel = mediaType === "anime" ? 1 : 0;
+
+  const [activeChannel, setActiveChannel] = useState(defaultChannel);
+  const [subDub, setSubDub] = useState<"sub" | "dub">(initialSubDub);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [shieldActive, setShieldActive] = useState(true);
   const [playerState, setPlayerState] = useState<PlayerState>("loading");
@@ -24,51 +35,75 @@ const PlayerPage = () => {
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const { updateProgress } = useLibrary();
 
-  const mediaType = (type as "movie" | "tv") || "movie";
-  const tmdbId = Number(id);
-  const season = Number(searchParams.get("season")) || 1;
-  const episode = Number(searchParams.get("episode")) || 1;
+  // TMDB details for movie/tv
+  const { data: tmdbDetails, isLoading: tmdbLoading } = useQuery({
+    queryKey: ["player-detail", mediaType, contentId],
+    queryFn: () => getMovieDetails(contentId, mediaType as "movie" | "tv"),
+    enabled: !!contentId && mediaType !== "anime",
+  });
 
-  const { data: details, isLoading: detailsLoading } = useQuery({
-    queryKey: ["player-detail", mediaType, tmdbId],
-    queryFn: () => getMovieDetails(tmdbId, mediaType),
-    enabled: !!tmdbId,
+  // Jikan details for anime
+  const { data: animeDetails, isLoading: animeLoading } = useQuery({
+    queryKey: ["player-anime-detail", contentId],
+    queryFn: () => getAnimeById(contentId),
+    enabled: !!contentId && mediaType === "anime",
   });
 
   const { data: seasonData } = useQuery({
-    queryKey: ["player-season", tmdbId, season],
-    queryFn: () => getSeasonDetails(tmdbId, season),
-    enabled: mediaType === "tv" && !!tmdbId,
+    queryKey: ["player-season", contentId, season],
+    queryFn: () => getSeasonDetails(contentId, season),
+    enabled: mediaType === "tv" && !!contentId,
   });
 
-  const totalEpisodes = seasonData?.episodes?.length || 0;
-  const canPrev = mediaType === "tv" && episode > 1;
-  const canNext = mediaType === "tv" && episode < totalEpisodes;
-  const animeTitle = details ? isAnime(details as any) : false;
+  const isLoading = mediaType === "anime" ? animeLoading : tmdbLoading;
+  const details = mediaType === "anime" ? animeDetails : tmdbDetails;
+
+  // Compute display info
+  const displayTitle = mediaType === "anime"
+    ? (animeDetails?.title_english || animeDetails?.title || "Anime")
+    : tmdbDetails ? getDisplayInfo(tmdbDetails as any).title : "";
+  const displayYear = mediaType === "anime"
+    ? (animeDetails?.aired?.from ? new Date(animeDetails.aired.from).getFullYear() : null)
+    : tmdbDetails ? getDisplayInfo(tmdbDetails as any).year : null;
+  const displayRating = mediaType === "anime"
+    ? (animeDetails?.score || 0)
+    : (tmdbDetails?.vote_average || 0);
+
+  // Episode counts
+  const totalEpisodes = mediaType === "tv"
+    ? (seasonData?.episodes?.length || 0)
+    : mediaType === "anime"
+      ? (animeDetails?.episodes || 0)
+      : 0;
+  const hasEpisodes = mediaType === "tv" || mediaType === "anime";
+  const canPrev = hasEpisodes && episode > 1;
+  const canNext = hasEpisodes && totalEpisodes > 0 && episode < totalEpisodes;
+
   const channel = CHANNELS[activeChannel];
-  const playerUrl = (!channel.disabled && tmdbId) ? channel.getUrl(mediaType, tmdbId, season, episode) : "";
-  const displayInfo = details ? getDisplayInfo(details as any) : null;
+  const playerUrl = (!channel.disabled && contentId)
+    ? channel.getUrl(mediaType, contentId, season, episode, subDub)
+    : "";
 
   // Save progress on mount
   useEffect(() => {
-    if (details) {
+    if (tmdbDetails && mediaType !== "anime") {
       const movie = {
-        id: details.id,
-        title: details.title,
-        name: details.name,
-        overview: details.overview,
-        poster_path: details.poster_path,
-        backdrop_path: details.backdrop_path,
-        vote_average: details.vote_average,
-        release_date: details.release_date,
-        first_air_date: details.first_air_date,
-        genre_ids: details.genres.map((g) => g.id),
+        id: tmdbDetails.id,
+        title: tmdbDetails.title,
+        name: tmdbDetails.name,
+        overview: tmdbDetails.overview,
+        poster_path: tmdbDetails.poster_path,
+        backdrop_path: tmdbDetails.backdrop_path,
+        vote_average: tmdbDetails.vote_average,
+        release_date: tmdbDetails.release_date,
+        first_air_date: tmdbDetails.first_air_date,
+        genre_ids: tmdbDetails.genres.map((g) => g.id),
         media_type: mediaType,
-        original_language: details.original_language,
+        original_language: tmdbDetails.original_language,
       };
-      updateProgress(movie, mediaType, 10, season, episode);
+      updateProgress(movie, mediaType as "movie" | "tv", 10, season, episode);
     }
-  }, [details, mediaType, season, episode]);
+  }, [tmdbDetails, mediaType, season, episode]);
 
   // Reset shield and player state when channel or URL changes
   useEffect(() => {
@@ -76,7 +111,6 @@ const PlayerPage = () => {
     setPlayerState("loading");
     if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
     loadTimeoutRef.current = setTimeout(() => {
-      // If still loading after 10s, assume it might have loaded (iframes don't reliably fire events cross-origin)
       setPlayerState((prev) => (prev === "loading" ? "ready" : prev));
     }, 10000);
     return () => { if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current); };
@@ -89,24 +123,23 @@ const PlayerPage = () => {
         channel: channel.name,
         url: playerUrl,
         mediaType,
-        tmdbId,
+        contentId,
         season: mediaType === "tv" ? season : undefined,
-        episode: mediaType === "tv" ? episode : undefined,
+        episode: hasEpisodes ? episode : undefined,
+        subDub: mediaType === "anime" ? subDub : undefined,
         sandbox: channel.sandbox,
         allow: channel.allow,
       });
     }
   }, [playerUrl, activeChannel]);
 
-  // Fullscreen change listener with orientation unlock
+  // Fullscreen change listener
   useEffect(() => {
     const handler = () => {
       const fs = !!document.fullscreenElement;
       setIsFullscreen(fs);
       if (!fs) {
-        try {
-          (screen.orientation as any)?.unlock?.();
-        } catch {}
+        try { (screen.orientation as any)?.unlock?.(); } catch {}
       }
     };
     document.addEventListener("fullscreenchange", handler);
@@ -119,13 +152,21 @@ const PlayerPage = () => {
   }, []);
 
   const goEpisode = (ep: number) => {
-    navigate(`/player/tv/${tmdbId}?season=${season}&episode=${ep}`, { replace: true });
+    if (mediaType === "anime") {
+      navigate(`/player/anime/${contentId}?episode=${ep}&subDub=${subDub}`, { replace: true });
+    } else {
+      navigate(`/player/tv/${contentId}?season=${season}&episode=${ep}`, { replace: true });
+    }
   };
 
   const handleChannelSwitch = (index: number) => {
     const ch = CHANNELS[index];
     if (ch.disabled) {
       toast({ title: "Channel 3 is coming soon", description: "This channel will be available in a future update." });
+      return;
+    }
+    if (mediaType === "anime" && !ch.supportsAnime) {
+      toast({ title: "Not supported", description: `${ch.name} doesn't support anime streaming.` });
       return;
     }
     setActiveChannel(index);
@@ -137,23 +178,16 @@ const PlayerPage = () => {
     if (!document.fullscreenElement) {
       try {
         await el.requestFullscreen();
-        try {
-          await (screen.orientation as any)?.lock?.("landscape");
-        } catch {}
-      } catch (e) {
-        console.warn("Fullscreen request failed", e);
-      }
+        try { await (screen.orientation as any)?.lock?.("landscape"); } catch {}
+      } catch (e) { console.warn("Fullscreen request failed", e); }
     } else {
-      try {
-        await document.exitFullscreen();
-      } catch {}
+      try { await document.exitFullscreen(); } catch {}
     }
   };
 
   const handleRetry = () => {
     setPlayerState("loading");
     setShieldActive(true);
-    // Force iframe re-render by toggling channel back
     const current = activeChannel;
     setActiveChannel(-1);
     setTimeout(() => setActiveChannel(current), 50);
@@ -164,8 +198,7 @@ const PlayerPage = () => {
     setPlayerState("ready");
   };
 
-  // Loading state
-  if (detailsLoading || !details) {
+  if (isLoading || !details) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <div className="w-full max-w-[1100px] space-y-4">
@@ -188,11 +221,12 @@ const PlayerPage = () => {
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{displayInfo?.title}</p>
+          <p className="text-sm font-semibold text-foreground truncate">{displayTitle}</p>
           <p className="text-xs text-muted-foreground">
-            {displayInfo?.year && displayInfo.year}
-            {details.vote_average > 0 && ` · ⭐ ${details.vote_average.toFixed(1)}`}
+            {displayYear && displayYear}
+            {displayRating > 0 && ` · ⭐ ${displayRating.toFixed(1)}`}
             {mediaType === "tv" && ` · S${season} · E${episode}`}
+            {mediaType === "anime" && ` · EP ${episode}`}
           </p>
         </div>
         <button
@@ -203,14 +237,14 @@ const PlayerPage = () => {
         </button>
       </div>
 
-      {/* Channel switcher */}
+      {/* Channel switcher + Sub/Dub */}
       <div className="flex gap-2 px-4 py-2 overflow-x-auto">
         {CHANNELS.map((ch, i) => (
           <button
             key={ch.id}
             onClick={() => handleChannelSwitch(i)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-              ch.disabled
+              ch.disabled || (mediaType === "anime" && !ch.supportsAnime)
                 ? "bg-muted/50 text-muted-foreground/50 cursor-not-allowed"
                 : i === activeChannel
                   ? "bg-primary text-primary-foreground"
@@ -223,7 +257,7 @@ const PlayerPage = () => {
         ))}
 
         {/* Sub/Dub toggle — anime only */}
-        {animeTitle && (
+        {mediaType === "anime" && (
           <div className="flex rounded-full overflow-hidden border border-border ml-auto">
             <button
               onClick={() => setSubDub("sub")}
@@ -254,7 +288,6 @@ const PlayerPage = () => {
               isFullscreen ? "fixed inset-0 z-50 rounded-none" : "aspect-video rounded-2xl"
             }`}
           >
-            {/* Iframe */}
             {playerUrl && activeChannel >= 0 ? (
               <iframe
                 key={`${playerUrl}-${subDub}-${activeChannel}`}
@@ -272,7 +305,7 @@ const PlayerPage = () => {
               </div>
             )}
 
-            {/* Dismissable shield overlay — absorbs first tap to reduce ads */}
+            {/* Dismissable shield overlay */}
             {shieldActive && playerUrl && (
               <div
                 className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
@@ -287,10 +320,7 @@ const PlayerPage = () => {
                     </>
                   )}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      dismissShield();
-                    }}
+                    onClick={(e) => { e.stopPropagation(); dismissShield(); }}
                     className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
                   >
                     <Play className="w-4 h-4" /> Tap to Watch
@@ -300,7 +330,6 @@ const PlayerPage = () => {
               </div>
             )}
 
-            {/* Re-shield button — shown when shield is dismissed */}
             {!shieldActive && playerUrl && (
               <button
                 onClick={() => setShieldActive(true)}
@@ -311,19 +340,14 @@ const PlayerPage = () => {
               </button>
             )}
 
-            {/* Fullscreen button overlay */}
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFullscreen();
-              }}
+              onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
               className="absolute bottom-3 right-3 z-20 w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center text-foreground hover:bg-background/90 transition-colors"
             >
               {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
             </button>
           </div>
 
-          {/* Error state */}
           {playerState === "error" && (
             <div className="mt-4 p-4 rounded-xl bg-card border border-border text-center space-y-3">
               <p className="text-sm font-medium text-foreground">Source unavailable — {channel.name}</p>
@@ -332,13 +356,8 @@ const PlayerPage = () => {
                 <Button variant="outline" size="sm" onClick={handleRetry} className="gap-1">
                   <RefreshCw className="w-3 h-3" /> Retry
                 </Button>
-                {CHANNELS.filter((c) => !c.disabled && c.id !== channel.id).map((c, i) => (
-                  <Button
-                    key={c.id}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleChannelSwitch(CHANNELS.indexOf(c))}
-                  >
+                {CHANNELS.filter((c) => !c.disabled && c.id !== channel.id && (mediaType !== "anime" || c.supportsAnime)).map((c) => (
+                  <Button key={c.id} variant="secondary" size="sm" onClick={() => handleChannelSwitch(CHANNELS.indexOf(c))}>
                     Switch to {c.name}
                   </Button>
                 ))}
@@ -349,30 +368,16 @@ const PlayerPage = () => {
       </div>
 
       {/* Episode navigation */}
-      {mediaType === "tv" && (
+      {hasEpisodes && (
         <div className="flex items-center justify-between px-4 py-3 max-w-[1100px] mx-auto">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canPrev}
-            onClick={() => goEpisode(episode - 1)}
-            className="gap-1"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Previous
+          <Button variant="outline" size="sm" disabled={!canPrev} onClick={() => goEpisode(episode - 1)} className="gap-1">
+            <ChevronLeft className="w-4 h-4" /> Previous
           </Button>
           <span className="text-xs text-muted-foreground">
             Episode {episode}{totalEpisodes ? ` of ${totalEpisodes}` : ""}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canNext}
-            onClick={() => goEpisode(episode + 1)}
-            className="gap-1"
-          >
-            Next
-            <ChevronRight className="w-4 h-4" />
+          <Button variant="outline" size="sm" disabled={!canNext} onClick={() => goEpisode(episode + 1)} className="gap-1">
+            Next <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
       )}
