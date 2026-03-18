@@ -26,14 +26,33 @@ const SearchPage = () => {
   });
 
   const isLoading = tmdbLoading || animeLoading;
-  const results = [
-    ...(tmdbResults || []),
-    ...(animeResults || []),
-  ];
-  // Deduplicate by id+media_type
+
+  // Deduplicate: anime-first strategy
+  // Normalize titles for comparison
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  const animeList = animeResults || [];
+  const tmdbList = tmdbResults || [];
+
+  // Collect normalized anime titles to filter TMDB dupes
+  const animeTitles = new Set<string>();
+  animeList.forEach((a) => {
+    if (a.title) animeTitles.add(normalize(a.title));
+    if (a.name) animeTitles.add(normalize(a.name));
+  });
+
+  // Filter TMDB results that match anime titles
+  const filteredTmdb = tmdbList.filter((t) => {
+    const tTitle = normalize(t.title || t.name || "");
+    return !animeTitles.has(tTitle);
+  });
+
+  const results = [...animeList, ...filteredTmdb];
+
+  // Final dedup by id+media_type
   const seen = new Set<string>();
   const deduped = results.filter((r) => {
-    const key = `${r.media_type}-${r.id}`;
+    const key = `${r.media_type || "movie"}-${r.id}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

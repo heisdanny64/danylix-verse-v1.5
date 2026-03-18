@@ -36,7 +36,7 @@ export const CHANNELS: Channel[] = [
     supportsAnime: true,
     getUrl: (type, id, season, episode, subDub) => {
       if (type === "anime") {
-        return `https://vidlink.pro/anime/${id}/${episode || 1}/${subDub || "sub"}`;
+        return `https://vidlink.pro/anime/${id}/${episode || 1}/${subDub || "sub"}?fallback=true`;
       }
       if (type === "tv" && season && episode) {
         return `https://vidlink.pro/tv/${id}/${season}/${episode}`;

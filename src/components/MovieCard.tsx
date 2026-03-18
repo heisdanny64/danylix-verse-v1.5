@@ -10,13 +10,7 @@ interface MovieCardProps {
 const MovieCard = ({ movie, mediaType, compact }: MovieCardProps) => {
   const { title, year } = getDisplayInfo(movie);
   const type = mediaType || movie.media_type || "movie";
-
-  const link =
-    type === "anime"
-      ? `/player/anime/${movie.id}?episode=1&subDub=sub`
-      : type === "tv"
-        ? `/series/${movie.id}`
-        : `/movie/movie-${movie.id}`;
+  const link = `/details/${type}/${movie.id}`;
 
   return (
     <Link

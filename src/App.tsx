@@ -6,8 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import BottomNav from "@/components/BottomNav";
 import Index from "./pages/Index.tsx";
 import SearchPage from "./pages/SearchPage.tsx";
-import MovieDetails from "./pages/MovieDetails.tsx";
-import SeriesDetails from "./pages/SeriesDetails.tsx";
+import DetailsPage from "./pages/DetailsPage.tsx";
 import PlayerPage from "./pages/PlayerPage.tsx";
 import CategoryPage from "./pages/CategoryPage.tsx";
 import RecommendationsPage from "./pages/RecommendationsPage.tsx";
@@ -25,8 +24,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/search" element={<SearchPage />} />
-          <Route path="/movie/:id" element={<MovieDetails />} />
-          <Route path="/series/:id" element={<SeriesDetails />} />
+          <Route path="/details/:type/:id" element={<DetailsPage />} />
           <Route path="/player/:type/:id" element={<PlayerPage />} />
           <Route path="/player/anime/:id" element={<PlayerPage />} />
           <Route path="/category/:slug" element={<CategoryPage />} />

@@ -31,7 +31,7 @@ const MovieRow = ({ title, movies, isLoading, mediaType, slug }: MovieRowProps) 
               </div>
             ))
           : movies.map((movie) => (
-              <MovieCard key={movie.id} movie={movie} mediaType={mediaType} />
+              <MovieCard key={`${movie.media_type || mediaType}-${movie.id}`} movie={movie} mediaType={mediaType} />
             ))}
       </div>
     </section>
