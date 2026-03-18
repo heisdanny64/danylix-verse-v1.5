@@ -15,10 +15,7 @@ const ContinueWatchingRow = () => {
       <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
         {continueWatching.map((item: ContinueWatchingItem) => {
           const { title } = getDisplayInfo(item.movie);
-          const link =
-            item.mediaType === "tv"
-              ? `/player/tv/${item.movie.id}?season=${item.season || 1}&episode=${item.episode || 1}`
-              : `/player/movie/${item.movie.id}`;
+          const link = `/details/${item.mediaType}/${item.movie.id}`;
 
           return (
             <Link key={item.movie.id} to={link} className="flex-shrink-0 w-[160px] group">
@@ -38,6 +35,9 @@ const ContinueWatchingRow = () => {
               <p className="text-xs font-medium text-foreground mt-1.5 truncate">{title}</p>
               {item.mediaType === "tv" && item.season && item.episode && (
                 <p className="text-xs text-muted-foreground">S{item.season} E{item.episode}</p>
+              )}
+              {item.mediaType === "anime" && item.episode && (
+                <p className="text-xs text-muted-foreground">EP {item.episode}</p>
               )}
             </Link>
           );
