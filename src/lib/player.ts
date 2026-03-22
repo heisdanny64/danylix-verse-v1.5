@@ -13,22 +13,6 @@ export const CHANNELS: Channel[] = [
   {
     id: 1,
     name: "Channel 1",
-    label: "VidSrc",
-    disabled: false,
-    sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation",
-    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
-    supportsAnime: false,
-    getUrl: (type, id, season, episode) => {
-      if (type === "anime") return "";
-      if (type === "tv" && season && episode) {
-        return `https://vidsrc.xyz/embed/tv/${id}/${season}/${episode}`;
-      }
-      return `https://vidsrc.xyz/embed/movie/${id}`;
-    },
-  },
-  {
-    id: 2,
-    name: "Channel 2",
     label: "VidLink",
     disabled: false,
     sandbox: "",
@@ -42,6 +26,22 @@ export const CHANNELS: Channel[] = [
         return `https://vidlink.pro/tv/${id}/${season}/${episode}`;
       }
       return `https://vidlink.pro/movie/${id}`;
+    },
+  },
+  {
+    id: 2,
+    name: "Channel 2",
+    label: "VidSrc",
+    disabled: false,
+    sandbox: "allow-scripts allow-same-origin allow-forms allow-presentation",
+    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
+    supportsAnime: false,
+    getUrl: (type, id, season, episode) => {
+      if (type === "anime") return "";
+      if (type === "tv" && season && episode) {
+        return `https://vidsrc.xyz/embed/tv/${id}/${season}/${episode}`;
+      }
+      return `https://vidsrc.xyz/embed/movie/${id}`;
     },
   },
   {
