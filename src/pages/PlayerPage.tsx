@@ -23,10 +23,8 @@ const PlayerPage = () => {
   const episode = Number(searchParams.get("episode")) || 1;
   const initialSubDub = (searchParams.get("subDub") as "sub" | "dub") || "sub";
 
-  // For anime, auto-select Channel 2 (only one supporting anime)
-  const defaultChannel = mediaType === "anime" ? 1 : 0;
-
-  const [activeChannel, setActiveChannel] = useState(defaultChannel);
+  // Channel 1 (VidLink) is default and supports all types
+  const [activeChannel, setActiveChannel] = useState(0);
   const [subDub, setSubDub] = useState<"sub" | "dub">(initialSubDub);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [shieldActive, setShieldActive] = useState(true);
@@ -79,7 +77,9 @@ const PlayerPage = () => {
   const canPrev = hasEpisodes && episode > 1;
   const canNext = hasEpisodes && totalEpisodes > 0 && episode < totalEpisodes;
 
-  const channel = CHANNELS[activeChannel];
+  const channel = CHANNELS[activeChannel] || CHANNELS[0];
+
+  // CRITICAL: For anime, always use mal_id. For movie/tv, always use TMDB id.
   const playerUrl = (!channel.disabled && contentId)
     ? channel.getUrl(mediaType, contentId, season, episode, subDub)
     : "";
@@ -121,14 +121,13 @@ const PlayerPage = () => {
     if (import.meta.env.DEV && playerUrl) {
       console.log("[Player Debug]", {
         channel: channel.name,
+        label: channel.label,
         url: playerUrl,
         mediaType,
         contentId,
         season: mediaType === "tv" ? season : undefined,
         episode: hasEpisodes ? episode : undefined,
         subDub: mediaType === "anime" ? subDub : undefined,
-        sandbox: channel.sandbox,
-        allow: channel.allow,
       });
     }
   }, [playerUrl, activeChannel]);
@@ -166,7 +165,7 @@ const PlayerPage = () => {
       return;
     }
     if (mediaType === "anime" && !ch.supportsAnime) {
-      toast({ title: "Not supported", description: `${ch.name} doesn't support anime streaming.` });
+      toast({ title: "Not supported", description: `${ch.label} doesn't support anime streaming.` });
       return;
     }
     setActiveChannel(index);
@@ -251,8 +250,8 @@ const PlayerPage = () => {
                   : "bg-muted text-muted-foreground hover:bg-accent"
             }`}
           >
-            {ch.name}
-            {ch.disabled && <span className="ml-1 text-[10px] opacity-60">({ch.label})</span>}
+            {ch.label}
+            {ch.disabled && <span className="ml-1 text-[10px] opacity-60">(Soon)</span>}
           </button>
         ))}
 
@@ -316,7 +315,7 @@ const PlayerPage = () => {
                   {playerState === "loading" && (
                     <>
                       <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                      <p className="text-sm text-white/80">Loading {channel.name}...</p>
+                      <p className="text-sm text-white/80">Loading {channel.label}...</p>
                     </>
                   )}
                   <button
@@ -350,7 +349,7 @@ const PlayerPage = () => {
 
           {playerState === "error" && (
             <div className="mt-4 p-4 rounded-xl bg-card border border-border text-center space-y-3">
-              <p className="text-sm font-medium text-foreground">Source unavailable — {channel.name}</p>
+              <p className="text-sm font-medium text-foreground">Source unavailable — {channel.label}</p>
               <p className="text-xs text-muted-foreground">This channel could not load. Try another channel or retry.</p>
               <div className="flex items-center justify-center gap-2">
                 <Button variant="outline" size="sm" onClick={handleRetry} className="gap-1">
@@ -358,7 +357,7 @@ const PlayerPage = () => {
                 </Button>
                 {CHANNELS.filter((c) => !c.disabled && c.id !== channel.id && (mediaType !== "anime" || c.supportsAnime)).map((c) => (
                   <Button key={c.id} variant="secondary" size="sm" onClick={() => handleChannelSwitch(CHANNELS.indexOf(c))}>
-                    Switch to {c.name}
+                    Switch to {c.label}
                   </Button>
                 ))}
               </div>

@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import EpisodeList from "@/components/EpisodeList";
+import AnimeEpisodeList from "@/components/AnimeEpisodeList";
 import MovieRow from "@/components/MovieRow";
 
 const DetailsPage = () => {
@@ -134,6 +135,10 @@ const DetailsPage = () => {
     navigate(`/player/tv/${contentId}?season=${ep.season_number}&episode=${ep.episode_number}`);
   };
 
+  const handlePlayAnimeEpisode = (ep: number) => {
+    navigate(`/player/anime/${contentId}?episode=${ep}&subDub=sub`);
+  };
+
   return (
     <div className="min-h-screen pb-24">
       {/* Backdrop */}
@@ -230,6 +235,14 @@ const DetailsPage = () => {
                 </AccordionItem>
               ))}
             </Accordion>
+          </div>
+        )}
+
+        {/* Anime Episodes */}
+        {mediaType === "anime" && !isUpcoming && episodeCount && episodeCount > 0 && (
+          <div className="pt-2">
+            <h2 className="text-lg font-bold text-foreground mb-2">Episodes</h2>
+            <AnimeEpisodeList totalEpisodes={episodeCount} onPlayEpisode={handlePlayAnimeEpisode} />
           </div>
         )}
       </div>

@@ -164,14 +164,6 @@ export function getDisplayInfo(m: TMDBMovie | TMDBMovieDetail) {
   return { title, year };
 }
 
-// Anime detection — requires Japanese language + animation genre
-export function isAnime(item: TMDBMovie | TMDBMovieDetail): boolean {
-  const isJapanese = item.original_language === "ja";
-  const genreIds = 'genre_ids' in item ? item.genre_ids : (item.genres?.map(g => g.id) || []);
-  const isAnimation = genreIds.includes(16);
-  return isJapanese && isAnimation;
-}
-
 // Freshness scoring for prioritizing recent content
 function getFreshnessScore(item: TMDBMovie): number {
   const date = item.release_date || item.first_air_date;
@@ -209,20 +201,26 @@ const jikanImport = () => import("@/lib/jikan");
 
 export const CATEGORY_MAP: Record<string, CategoryConfig> = {
   "trending-today": { title: "Trending Today", mediaType: "movie", fetchFn: () => getTrending("all", "day") },
-  "picked-for-you": { title: "Picked For You", mediaType: "movie", fetchFn: (p) => getPopular("movie", p) },
+  "picked-for-you": { title: "Popular Movies", mediaType: "movie", fetchFn: (p) => getPopular("movie", p) },
   "popular-this-week": { title: "Popular This Week", mediaType: "movie", fetchFn: () => getTrending("all", "week") },
   "top-rated-movies": { title: "Top Rated Movies", mediaType: "movie", fetchFn: (p) => getTopRated("movie", p) },
   "action-movies": { title: "Action Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.action, "movie", p) },
   "comedy-movies": { title: "Comedy Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.comedy, "movie", p) },
   "scifi-movies": { title: "Sci-Fi Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.sciFi, "movie", p) },
   "horror-movies": { title: "Horror Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.horror, "movie", p) },
-  "popular-series": { title: "Popular Series", mediaType: "tv", fetchFn: (p) => getPopular("tv", p) },
+  "popular-series": { title: "Popular TV Shows", mediaType: "tv", fetchFn: (p) => getPopular("tv", p) },
   "crime-series": { title: "Crime Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.crime, "tv", p) },
   "mystery-series": { title: "Mystery Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.mystery, "tv", p) },
-  "popular-anime": { title: "Popular Anime", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getTopAnime(p)) },
-  "current-season-anime": { title: "Current Season", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getCurrentSeasonAnime(p)) },
-  "upcoming-anime": { title: "Upcoming Anime", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getUpcomingAnime(p)) },
-  "korean-dramas": { title: "Korean Dramas", mediaType: "tv", fetchFn: (p) => getByLanguage("ko", "tv", p) },
+  "popular-anime": { title: "Trending Anime", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getTopAnime(p)) },
+  "current-season-anime": { title: "Popular Anime", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getCurrentSeasonAnime(p)) },
+  "upcoming-anime": { title: "Seasonal Anime", mediaType: "anime", fetchFn: (p) => jikanImport().then((m) => m.getUpcomingAnime(p)) },
+  "korean-dramas": { title: "K-Drama Hits", mediaType: "tv", fetchFn: (p) => getByLanguage("ko", "tv", p) },
+  "chinese-dramas": { title: "C-Drama Picks", mediaType: "tv", fetchFn: (p) => getByLanguage("zh", "tv", p) },
+  "thai-dramas": { title: "Thai Drama", mediaType: "tv", fetchFn: (p) => getByLanguage("th", "tv", p) },
+  "south-african": { title: "South African Drama", mediaType: "tv", fetchFn: (p) => getByLanguage("zu", "tv", p) },
+  "nollywood": { title: "Nollywood Picks", mediaType: "movie", fetchFn: (p) => getByLanguage("yo", "movie", p) },
+  "black-shows": { title: "Must Watch Black Shows", mediaType: "tv", fetchFn: (p) => getByGenreAndLanguage(GENRE_IDS.drama, "en", "tv", p) },
+  "short-series": { title: "Hot Short Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.drama, "tv", p) },
   "japanese-series": { title: "Japanese Series", mediaType: "tv", fetchFn: (p) => getByLanguage("ja", "tv", p) },
   "hidden-gems": { title: "Hidden Gems", mediaType: "movie", fetchFn: (p) => getHiddenGems("movie", p) },
 };
