@@ -3,14 +3,15 @@ import { posterUrl, getDisplayInfo, type TMDBMovie } from "@/lib/tmdb";
 
 interface MovieCardProps {
   movie: TMDBMovie;
-  mediaType?: "movie" | "tv" | "anime";
+  mediaType?: "movie" | "tv";
   compact?: boolean;
 }
 
 const MovieCard = ({ movie, mediaType, compact }: MovieCardProps) => {
   const { title, year } = getDisplayInfo(movie);
   const type = mediaType || movie.media_type || "movie";
-  const link = `/details/${type}/${movie.id}`;
+
+  const link = type === "tv" ? `/series/${movie.id}` : `/movie/movie-${movie.id}`;
 
   return (
     <Link

@@ -32,7 +32,11 @@ const HeroBanner = ({ movies }: HeroBannerProps) => {
   const inWatchlist = isInWatchlist(movie.id);
 
   const handleWatch = () => {
-    navigate(`/details/${type}/${movie.id}`);
+    if (type === "tv") {
+      navigate(`/series/${movie.id}`);
+    } else {
+      navigate(`/player/movie/${movie.id}`);
+    }
   };
 
   return (
@@ -64,13 +68,14 @@ const HeroBanner = ({ movies }: HeroBannerProps) => {
             size="sm"
             variant="outline"
             className="gap-1.5"
-            onClick={() => addToWatchlist(movie, type as "movie" | "tv" | "anime")}
+            onClick={() => addToWatchlist(movie, type as "movie" | "tv")}
           >
             {inWatchlist ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
             {inWatchlist ? "Added" : "Add to Library"}
           </Button>
         </div>
 
+        {/* Dots */}
         {featured.length > 1 && (
           <div className="flex gap-1.5 pt-1">
             {featured.map((_, i) => (

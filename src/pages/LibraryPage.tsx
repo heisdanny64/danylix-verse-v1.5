@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookmarkPlus } from "lucide-react";
+import { BookmarkPlus, Play } from "lucide-react";
 import { useLibrary } from "@/lib/library";
 import MovieCard from "@/components/MovieCard";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
@@ -19,6 +19,7 @@ const LibraryPage = () => {
 
   const filtered = watchlist.filter((m) => {
     if (filter === "all") return true;
+    if (filter === "anime") return m.genre_ids?.includes(16) && m.original_language === "ja";
     return m.mediaType === filter;
   });
 
@@ -28,11 +29,14 @@ const LibraryPage = () => {
         <h1 className="text-xl font-bold text-foreground">My Library</h1>
       </header>
 
+      {/* Continue Watching */}
       <ContinueWatchingRow />
 
+      {/* Watchlist */}
       <section className="px-4 mt-6">
         <h2 className="text-base font-semibold text-foreground mb-3">Watchlist</h2>
 
+        {/* Filter tabs */}
         <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
           {filters.map((f) => (
             <button
@@ -52,7 +56,7 @@ const LibraryPage = () => {
         {filtered.length > 0 ? (
           <div className="grid grid-cols-3 gap-3">
             {filtered.map((m) => (
-              <MovieCard key={`${m.mediaType}-${m.id}`} movie={m as any} mediaType={m.mediaType as "movie" | "tv" | "anime"} compact />
+              <MovieCard key={m.id} movie={m as any} mediaType={m.mediaType as "movie" | "tv"} compact />
             ))}
           </div>
         ) : (

@@ -8,7 +8,7 @@ interface MovieRowProps {
   title: string;
   movies: TMDBMovie[];
   isLoading?: boolean;
-  mediaType?: "movie" | "tv" | "anime";
+  mediaType?: "movie" | "tv";
   slug?: string;
 }
 
@@ -31,7 +31,7 @@ const MovieRow = ({ title, movies, isLoading, mediaType, slug }: MovieRowProps) 
               </div>
             ))
           : movies.map((movie) => (
-              <MovieCard key={`${movie.media_type || mediaType}-${movie.id}`} movie={movie} mediaType={mediaType} />
+              <MovieCard key={movie.id} movie={movie} mediaType={mediaType} />
             ))}
       </div>
     </section>

@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { searchTMDB } from "@/lib/tmdb";
-import { searchAnime } from "@/lib/jikan";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -11,51 +10,11 @@ const SearchPage = () => {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
 
-  const { data: tmdbResults, isLoading: tmdbLoading } = useQuery({
-    queryKey: ["search-tmdb", query],
+  const { data: results, isLoading } = useQuery({
+    queryKey: ["search", query],
     queryFn: () => searchTMDB(query),
     enabled: query.length > 1,
     staleTime: 1000 * 60,
-  });
-
-  const { data: animeResults, isLoading: animeLoading } = useQuery({
-    queryKey: ["search-anime", query],
-    queryFn: () => searchAnime(query),
-    enabled: query.length > 1,
-    staleTime: 1000 * 60,
-  });
-
-  const isLoading = tmdbLoading || animeLoading;
-
-  // Deduplicate: anime-first strategy
-  // Normalize titles for comparison
-  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-  const animeList = animeResults || [];
-  const tmdbList = tmdbResults || [];
-
-  // Collect normalized anime titles to filter TMDB dupes
-  const animeTitles = new Set<string>();
-  animeList.forEach((a) => {
-    if (a.title) animeTitles.add(normalize(a.title));
-    if (a.name) animeTitles.add(normalize(a.name));
-  });
-
-  // Filter TMDB results that match anime titles
-  const filteredTmdb = tmdbList.filter((t) => {
-    const tTitle = normalize(t.title || t.name || "");
-    return !animeTitles.has(tTitle);
-  });
-
-  const results = [...animeList, ...filteredTmdb];
-
-  // Final dedup by id+media_type
-  const seen = new Set<string>();
-  const deduped = results.filter((r) => {
-    const key = `${r.media_type || "movie"}-${r.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
   });
 
   return (
@@ -70,7 +29,7 @@ const SearchPage = () => {
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search movies, series, or anime…"
+            placeholder="Search movies or series…"
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
           />
         </div>
@@ -79,7 +38,7 @@ const SearchPage = () => {
       <div className="px-4 mt-4">
         {query.length <= 1 && (
           <p className="text-center text-muted-foreground text-sm mt-20">
-            Start typing to search movies, series, and anime
+            Start typing to search movies and series
           </p>
         )}
         {query.length > 1 && isLoading && (
@@ -89,15 +48,15 @@ const SearchPage = () => {
             ))}
           </div>
         )}
-        {query.length > 1 && !isLoading && deduped.length === 0 && (
+        {query.length > 1 && !isLoading && results?.length === 0 && (
           <p className="text-center text-muted-foreground text-sm mt-20">
             No results found for "{query}"
           </p>
         )}
-        {deduped.length > 0 && (
+        {results && results.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {deduped.map((movie) => (
-              <MovieCard key={`${movie.media_type}-${movie.id}`} movie={movie} />
+            {results.map((movie) => (
+              <MovieCard key={movie.id} movie={movie} />
             ))}
           </div>
         )}
