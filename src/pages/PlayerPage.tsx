@@ -8,6 +8,7 @@ import { useLibrary } from "@/lib/library";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
+import HlsPlayer from "@/components/HlsPlayer";
 
 type PlayerState = "loading" | "ready" | "error";
 
@@ -45,7 +46,7 @@ const PlayerPage = () => {
   const canPrev = mediaType === "tv" && episode > 1;
   const canNext = mediaType === "tv" && episode < totalEpisodes;
   const animeTitle = details ? isAnime(details as any) : false;
-  const channel = CHANNELS[activeChannel];
+  const channel = CHANNELS[activeChannel] || CHANNELS[0];
   const playerUrl = (!channel.disabled && tmdbId) ? channel.getUrl(mediaType, tmdbId, season, episode) : "";
   const displayInfo = details ? getDisplayInfo(details as any) : null;
 
@@ -62,7 +63,7 @@ const PlayerPage = () => {
         vote_average: details.vote_average,
         release_date: details.release_date,
         first_air_date: details.first_air_date,
-        genre_ids: details.genres.map((g) => g.id),
+        genre_ids: details.genres.map((g: any) => g.id),
         media_type: mediaType,
         original_language: details.original_language,
       };
@@ -70,43 +71,41 @@ const PlayerPage = () => {
     }
   }, [details, mediaType, season, episode]);
 
-  // Reset shield and player state when channel or URL changes
+  // Reset state when channel or URL changes (iframe only)
   useEffect(() => {
-    setShieldActive(true);
-    setPlayerState("loading");
-    if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
-    loadTimeoutRef.current = setTimeout(() => {
-      // If still loading after 10s, assume it might have loaded (iframes don't reliably fire events cross-origin)
-      setPlayerState((prev) => (prev === "loading" ? "ready" : prev));
-    }, 10000);
+    if (channel.type === "iframe") {
+      setShieldActive(true);
+      setPlayerState("loading");
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = setTimeout(() => {
+        setPlayerState((prev) => (prev === "loading" ? "ready" : prev));
+      }, 10000);
+    }
     return () => { if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current); };
-  }, [playerUrl, activeChannel]);
+  }, [playerUrl, activeChannel, channel.type]);
 
   // Dev logging
   useEffect(() => {
     if (import.meta.env.DEV && playerUrl) {
       console.log("[Player Debug]", {
         channel: channel.name,
+        type: channel.type,
         url: playerUrl,
         mediaType,
         tmdbId,
         season: mediaType === "tv" ? season : undefined,
         episode: mediaType === "tv" ? episode : undefined,
-        sandbox: channel.sandbox,
-        allow: channel.allow,
       });
     }
   }, [playerUrl, activeChannel]);
 
-  // Fullscreen change listener with orientation unlock
+  // Fullscreen change listener
   useEffect(() => {
     const handler = () => {
       const fs = !!document.fullscreenElement;
       setIsFullscreen(fs);
       if (!fs) {
-        try {
-          (screen.orientation as any)?.unlock?.();
-        } catch {}
+        try { (screen.orientation as any)?.unlock?.(); } catch {}
       }
     };
     document.addEventListener("fullscreenchange", handler);
@@ -129,7 +128,14 @@ const PlayerPage = () => {
       return;
     }
     setActiveChannel(index);
+    setPlayerState("loading");
   };
+
+  const handleHlsError = useCallback(() => {
+    // Auto-fallback to Channel 2
+    toast({ title: "Switching to Channel 2...", description: "Stream unavailable, trying alternative source." });
+    setActiveChannel(1);
+  }, []);
 
   const toggleFullscreen = async () => {
     const el = videoWrapperRef.current;
@@ -137,23 +143,18 @@ const PlayerPage = () => {
     if (!document.fullscreenElement) {
       try {
         await el.requestFullscreen();
-        try {
-          await (screen.orientation as any)?.lock?.("landscape");
-        } catch {}
+        try { await (screen.orientation as any)?.lock?.("landscape"); } catch {}
       } catch (e) {
         console.warn("Fullscreen request failed", e);
       }
     } else {
-      try {
-        await document.exitFullscreen();
-      } catch {}
+      try { await document.exitFullscreen(); } catch {}
     }
   };
 
   const handleRetry = () => {
     setPlayerState("loading");
     setShieldActive(true);
-    // Force iframe re-render by toggling channel back
     const current = activeChannel;
     setActiveChannel(-1);
     setTimeout(() => setActiveChannel(current), 50);
@@ -164,7 +165,6 @@ const PlayerPage = () => {
     setPlayerState("ready");
   };
 
-  // Loading state
   if (detailsLoading || !details) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -176,6 +176,9 @@ const PlayerPage = () => {
       </div>
     );
   }
+
+  const isHls = channel.type === "hls";
+  const isIframe = channel.type === "iframe";
 
   return (
     <div className="min-h-screen bg-background">
@@ -195,12 +198,14 @@ const PlayerPage = () => {
             {mediaType === "tv" && ` · S${season} · E${episode}`}
           </p>
         </div>
-        <button
-          onClick={toggleFullscreen}
-          className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-foreground"
-        >
-          {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-        </button>
+        {!isHls && (
+          <button
+            onClick={toggleFullscreen}
+            className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-foreground"
+          >
+            {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+          </button>
+        )}
       </div>
 
       {/* Channel switcher */}
@@ -222,7 +227,6 @@ const PlayerPage = () => {
           </button>
         ))}
 
-        {/* Sub/Dub toggle — anime only */}
         {animeTitle && (
           <div className="flex rounded-full overflow-hidden border border-border ml-auto">
             <button
@@ -254,77 +258,87 @@ const PlayerPage = () => {
               isFullscreen ? "fixed inset-0 z-50 rounded-none" : "aspect-video rounded-2xl"
             }`}
           >
-            {/* Iframe */}
-            {playerUrl && activeChannel >= 0 ? (
-              <iframe
-                key={`${playerUrl}-${subDub}-${activeChannel}`}
+            {/* HLS Player */}
+            {isHls && playerUrl && (
+              <HlsPlayer
                 src={playerUrl}
-                className="w-full h-full border-0"
-                allowFullScreen
-                allow={channel.allow}
-                {...(channel.sandbox ? { sandbox: channel.sandbox } : {})}
-                onLoad={handleIframeLoad}
-                referrerPolicy="origin-when-cross-origin"
+                onError={handleHlsError}
+                onReady={() => setPlayerState("ready")}
+                isFullscreen={isFullscreen}
+                onToggleFullscreen={toggleFullscreen}
               />
-            ) : (
+            )}
+
+            {/* Iframe Player */}
+            {isIframe && playerUrl && activeChannel >= 0 && (
+              <>
+                <iframe
+                  key={`${playerUrl}-${subDub}-${activeChannel}`}
+                  src={playerUrl}
+                  className="w-full h-full border-0"
+                  allowFullScreen
+                  allow={channel.allow}
+                  {...(channel.sandbox ? { sandbox: channel.sandbox } : {})}
+                  onLoad={handleIframeLoad}
+                  referrerPolicy="origin-when-cross-origin"
+                />
+
+                {/* Shield overlay for iframe channels */}
+                {shieldActive && (
+                  <div
+                    className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
+                    onClick={dismissShield}
+                    style={{ background: "rgba(0,0,0,0.3)" }}
+                  >
+                    <div className="flex flex-col items-center gap-3 text-center">
+                      {playerState === "loading" && (
+                        <>
+                          <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                          <p className="text-sm text-white/80">Loading {channel.name}...</p>
+                        </>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); dismissShield(); }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+                      >
+                        <Play className="w-4 h-4" /> Tap to Watch
+                      </button>
+                      <p className="text-xs text-white/50">Shield active — blocks ad clicks</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Re-shield button */}
+                {!shieldActive && (
+                  <button
+                    onClick={() => setShieldActive(true)}
+                    className="absolute top-3 left-3 z-20 w-8 h-8 rounded-full bg-background/60 backdrop-blur-sm flex items-center justify-center text-foreground/70 hover:bg-background/80 transition-colors"
+                    title="Re-enable ad shield"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* Fullscreen button overlay for iframe */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
+                  className="absolute bottom-3 right-3 z-20 w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center text-foreground hover:bg-background/90 transition-colors"
+                >
+                  {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+                </button>
+              </>
+            )}
+
+            {/* No URL state */}
+            {!playerUrl && (
               <div className="flex items-center justify-center h-full">
                 <p className="text-muted-foreground text-sm">Select a channel to start playback</p>
               </div>
             )}
-
-            {/* Dismissable shield overlay — absorbs first tap to reduce ads */}
-            {shieldActive && playerUrl && (
-              <div
-                className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
-                onClick={dismissShield}
-                style={{ background: "rgba(0,0,0,0.3)" }}
-              >
-                <div className="flex flex-col items-center gap-3 text-center">
-                  {playerState === "loading" && (
-                    <>
-                      <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                      <p className="text-sm text-white/80">Loading {channel.name}...</p>
-                    </>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      dismissShield();
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-                  >
-                    <Play className="w-4 h-4" /> Tap to Watch
-                  </button>
-                  <p className="text-xs text-white/50">Shield active — blocks ad clicks</p>
-                </div>
-              </div>
-            )}
-
-            {/* Re-shield button — shown when shield is dismissed */}
-            {!shieldActive && playerUrl && (
-              <button
-                onClick={() => setShieldActive(true)}
-                className="absolute top-3 left-3 z-20 w-8 h-8 rounded-full bg-background/60 backdrop-blur-sm flex items-center justify-center text-foreground/70 hover:bg-background/80 transition-colors"
-                title="Re-enable ad shield"
-              >
-                <ShieldCheck className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Fullscreen button overlay */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFullscreen();
-              }}
-              className="absolute bottom-3 right-3 z-20 w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center text-foreground hover:bg-background/90 transition-colors"
-            >
-              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-            </button>
           </div>
 
-          {/* Error state */}
-          {playerState === "error" && (
+          {/* Error state (iframe only) */}
+          {isIframe && playerState === "error" && (
             <div className="mt-4 p-4 rounded-xl bg-card border border-border text-center space-y-3">
               <p className="text-sm font-medium text-foreground">Source unavailable — {channel.name}</p>
               <p className="text-xs text-muted-foreground">This channel could not load. Try another channel or retry.</p>
@@ -332,16 +346,6 @@ const PlayerPage = () => {
                 <Button variant="outline" size="sm" onClick={handleRetry} className="gap-1">
                   <RefreshCw className="w-3 h-3" /> Retry
                 </Button>
-                {CHANNELS.filter((c) => !c.disabled && c.id !== channel.id).map((c, i) => (
-                  <Button
-                    key={c.id}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleChannelSwitch(CHANNELS.indexOf(c))}
-                  >
-                    Switch to {c.name}
-                  </Button>
-                ))}
               </div>
             </div>
           )}
@@ -351,28 +355,14 @@ const PlayerPage = () => {
       {/* Episode navigation */}
       {mediaType === "tv" && (
         <div className="flex items-center justify-between px-4 py-3 max-w-[1100px] mx-auto">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canPrev}
-            onClick={() => goEpisode(episode - 1)}
-            className="gap-1"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Previous
+          <Button variant="outline" size="sm" disabled={!canPrev} onClick={() => goEpisode(episode - 1)} className="gap-1">
+            <ChevronLeft className="w-4 h-4" /> Previous
           </Button>
           <span className="text-xs text-muted-foreground">
             Episode {episode}{totalEpisodes ? ` of ${totalEpisodes}` : ""}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canNext}
-            onClick={() => goEpisode(episode + 1)}
-            className="gap-1"
-          >
-            Next
-            <ChevronRight className="w-4 h-4" />
+          <Button variant="outline" size="sm" disabled={!canNext} onClick={() => goEpisode(episode + 1)} className="gap-1">
+            Next <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
       )}
