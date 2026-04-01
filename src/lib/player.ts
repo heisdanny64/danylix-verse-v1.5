@@ -15,9 +15,9 @@ export const CHANNELS: Channel[] = [
     name: "Channel 1",
     label: "Cinetaro",
     disabled: false,
-    type: "hls",
+    type: "iframe",
     sandbox: "",
-    allow: "",
+    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
     getUrl: (type, tmdbId, season, episode) => {
       if (type === "tv" && season && episode) {
         return `https://apicinetaro.falex43350.workers.dev/tv/${tmdbId}/${season}/${episode}/english`;
