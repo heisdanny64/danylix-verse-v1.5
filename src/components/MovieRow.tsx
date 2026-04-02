@@ -8,7 +8,7 @@ interface MovieRowProps {
   title: string;
   movies: TMDBMovie[];
   isLoading?: boolean;
-  mediaType?: "movie" | "tv";
+  mediaType?: "movie" | "tv" | "anime";
   slug?: string;
 }
 
