@@ -54,7 +54,7 @@ export function useLibrary() {
   );
 
   const updateProgress = useCallback(
-    (movie: TMDBMovie, mediaType: "movie" | "tv", progress: number, season?: number, episode?: number) => {
+    (movie: TMDBMovie, mediaType: "movie" | "tv" | "anime", progress: number, season?: number, episode?: number) => {
       setContinueWatching((prev) => {
         const filtered = prev.filter((item) => item.movie.id !== movie.id);
         return [
