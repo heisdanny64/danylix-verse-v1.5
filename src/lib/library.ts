@@ -37,7 +37,7 @@ export function useLibrary() {
   useEffect(() => saveJSON(WATCHLIST_KEY, watchlist), [watchlist]);
   useEffect(() => saveJSON(CONTINUE_KEY, continueWatching), [continueWatching]);
 
-  const addToWatchlist = useCallback((movie: TMDBMovie, mediaType: "movie" | "tv" = "movie") => {
+  const addToWatchlist = useCallback((movie: TMDBMovie, mediaType: "movie" | "tv" | "anime" = "movie") => {
     setWatchlist((prev) => {
       if (prev.some((m) => m.id === movie.id)) return prev;
       return [{ ...movie, mediaType }, ...prev];
