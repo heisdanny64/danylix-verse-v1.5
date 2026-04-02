@@ -194,7 +194,26 @@ export const GENRE_IDS = {
   horror: 27,
   mystery: 9648,
   sciFi: 878,
+  romance: 10749,
+  thriller: 53,
+  fantasy: 14,
+  documentary: 99,
+  family: 10751,
 } as const;
+
+export async function getByOriginCountry(country: string, mediaType: "movie" | "tv" = "tv", page = 1) {
+  const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/discover/${mediaType}`, {
+    with_origin_country: country,
+    sort_by: "popularity.desc",
+    page: String(page),
+  });
+  return data.results;
+}
+
+export async function getUpcoming(page = 1) {
+  const data = await tmdbFetch<{ results: TMDBMovie[] }>("/movie/upcoming", { page: String(page) });
+  return data.results;
+}
 
 // Category config for View All pages
 export interface CategoryConfig {

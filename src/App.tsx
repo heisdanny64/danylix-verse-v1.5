@@ -1,13 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import BottomNav from "@/components/BottomNav";
 import Index from "./pages/Index.tsx";
 import SearchPage from "./pages/SearchPage.tsx";
-import MovieDetails from "./pages/MovieDetails.tsx";
-import SeriesDetails from "./pages/SeriesDetails.tsx";
+import DetailsPage from "./pages/DetailsPage.tsx";
 import PlayerPage from "./pages/PlayerPage.tsx";
 import CategoryPage from "./pages/CategoryPage.tsx";
 import RecommendationsPage from "./pages/RecommendationsPage.tsx";
@@ -25,12 +24,14 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/search" element={<SearchPage />} />
-          <Route path="/movie/:id" element={<MovieDetails />} />
-          <Route path="/series/:id" element={<SeriesDetails />} />
+          <Route path="/details/:type/:id" element={<DetailsPage />} />
           <Route path="/player/:type/:id" element={<PlayerPage />} />
           <Route path="/category/:slug" element={<CategoryPage />} />
           <Route path="/recommendations" element={<RecommendationsPage />} />
           <Route path="/library" element={<LibraryPage />} />
+          {/* Legacy redirects */}
+          <Route path="/movie/movie-:id" element={<LegacyMovieRedirect />} />
+          <Route path="/series/:id" element={<LegacySeriesRedirect />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
         <BottomNav />
@@ -38,5 +39,18 @@ const App = () => (
     </TooltipProvider>
   </QueryClientProvider>
 );
+
+// Legacy redirect components
+import { useParams } from "react-router-dom";
+
+const LegacyMovieRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={`/details/movie/${id}`} replace />;
+};
+
+const LegacySeriesRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={`/details/tv/${id}`} replace />;
+};
 
 export default App;

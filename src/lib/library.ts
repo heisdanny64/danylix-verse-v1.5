@@ -6,7 +6,7 @@ const CONTINUE_KEY = "dverse_continue_watching";
 
 export interface ContinueWatchingItem {
   movie: TMDBMovie;
-  mediaType: "movie" | "tv";
+  mediaType: "movie" | "tv" | "anime";
   progress: number; // 0-100
   season?: number;
   episode?: number;
