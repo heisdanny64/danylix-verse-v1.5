@@ -16,7 +16,7 @@ export const CHANNELS: Channel[] = [
     name: "Channel 1",
     label: "Cinetaro",
     disabled: false,
-    type: "hls",
+    type: "iframe",
     sandbox: "",
     allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
     getUrl: (type, id, season, episode, subDub = "sub") => {
