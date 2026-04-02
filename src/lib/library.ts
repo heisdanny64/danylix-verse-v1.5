@@ -6,7 +6,7 @@ const CONTINUE_KEY = "dverse_continue_watching";
 
 export interface ContinueWatchingItem {
   movie: TMDBMovie;
-  mediaType: "movie" | "tv";
+  mediaType: "movie" | "tv" | "anime";
   progress: number; // 0-100
   season?: number;
   episode?: number;
@@ -37,7 +37,7 @@ export function useLibrary() {
   useEffect(() => saveJSON(WATCHLIST_KEY, watchlist), [watchlist]);
   useEffect(() => saveJSON(CONTINUE_KEY, continueWatching), [continueWatching]);
 
-  const addToWatchlist = useCallback((movie: TMDBMovie, mediaType: "movie" | "tv" = "movie") => {
+  const addToWatchlist = useCallback((movie: TMDBMovie, mediaType: "movie" | "tv" | "anime" = "movie") => {
     setWatchlist((prev) => {
       if (prev.some((m) => m.id === movie.id)) return prev;
       return [{ ...movie, mediaType }, ...prev];
@@ -54,7 +54,7 @@ export function useLibrary() {
   );
 
   const updateProgress = useCallback(
-    (movie: TMDBMovie, mediaType: "movie" | "tv", progress: number, season?: number, episode?: number) => {
+    (movie: TMDBMovie, mediaType: "movie" | "tv" | "anime", progress: number, season?: number, episode?: number) => {
       setContinueWatching((prev) => {
         const filtered = prev.filter((item) => item.movie.id !== movie.id);
         return [

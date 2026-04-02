@@ -6,28 +6,51 @@ import HeroBanner from "@/components/HeroBanner";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 import {
   getTrending, getPopular, getTopRated, getByGenre, getByGenreAndLanguage,
-  getByLanguage, getHiddenGems, GENRE_IDS, sortByFreshness,
+  getByLanguage, getHiddenGems, getByOriginCountry, getUpcoming, GENRE_IDS, sortByFreshness,
 } from "@/lib/tmdb";
+import { getTrendingAnime, getPopularAnime, animeToCard } from "@/lib/anilist";
 
 const HomePage = () => {
   const navigate = useNavigate();
 
   const hero = useQuery({ queryKey: ["trending-hero"], queryFn: () => getTrending("all", "day") });
+
+  // Core rows
   const trendingToday = useQuery({ queryKey: ["trending-today"], queryFn: async () => sortByFreshness(await getTrending("all", "day")) });
-  const pickedForYou = useQuery({ queryKey: ["picked-for-you"], queryFn: async () => sortByFreshness(await getPopular("movie")) });
-  const popularWeek = useQuery({ queryKey: ["popular-week"], queryFn: async () => sortByFreshness(await getTrending("all", "week")) });
-  const topRated = useQuery({ queryKey: ["top-rated-movies"], queryFn: () => getTopRated("movie") });
-  const action = useQuery({ queryKey: ["action-movies"], queryFn: () => getByGenre(GENRE_IDS.action, "movie") });
-  const comedy = useQuery({ queryKey: ["comedy-movies"], queryFn: () => getByGenre(GENRE_IDS.comedy, "movie") });
-  const sciFi = useQuery({ queryKey: ["scifi-movies"], queryFn: () => getByGenre(GENRE_IDS.sciFi, "movie") });
-  const horror = useQuery({ queryKey: ["horror-movies"], queryFn: () => getByGenre(GENRE_IDS.horror, "movie") });
+  const popularMovies = useQuery({ queryKey: ["popular-movies"], queryFn: async () => sortByFreshness(await getPopular("movie")) });
   const popularSeries = useQuery({ queryKey: ["popular-series"], queryFn: () => getPopular("tv") });
-  const crime = useQuery({ queryKey: ["crime-series"], queryFn: () => getByGenre(GENRE_IDS.crime, "tv") });
-  const mystery = useQuery({ queryKey: ["mystery-series"], queryFn: () => getByGenre(GENRE_IDS.mystery, "tv") });
-  const anime = useQuery({ queryKey: ["popular-anime"], queryFn: () => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv") });
-  const trendingAnime = useQuery({ queryKey: ["trending-anime"], queryFn: () => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv") });
+
+  // Anime rows (AniList)
+  const trendingAnime = useQuery({
+    queryKey: ["trending-anime-anilist"],
+    queryFn: async () => (await getTrendingAnime()).map(animeToCard),
+  });
+  const popularAnime = useQuery({
+    queryKey: ["popular-anime-anilist"],
+    queryFn: async () => (await getPopularAnime()).map(animeToCard),
+  });
+
+  // Global
+  const nollywood = useQuery({ queryKey: ["nollywood"], queryFn: () => getByOriginCountry("NG", "tv") });
   const kDrama = useQuery({ queryKey: ["korean-dramas"], queryFn: () => getByLanguage("ko", "tv") });
-  const jpSeries = useQuery({ queryKey: ["japanese-series"], queryFn: () => getByLanguage("ja", "tv") });
+  const cDrama = useQuery({ queryKey: ["chinese-dramas"], queryFn: () => getByLanguage("zh", "tv") });
+  const thaiDrama = useQuery({ queryKey: ["thai-dramas"], queryFn: () => getByLanguage("th", "tv") });
+  const saDrama = useQuery({ queryKey: ["south-african-drama"], queryFn: () => getByOriginCountry("ZA", "tv") });
+
+  // Curated
+  const romance = useQuery({ queryKey: ["romance"], queryFn: () => getByGenre(GENRE_IDS.romance, "movie") });
+  const thriller = useQuery({ queryKey: ["thriller-mystery"], queryFn: () => getByGenre(GENRE_IDS.thriller, "movie") });
+  const comedy = useQuery({ queryKey: ["comedy-movies"], queryFn: () => getByGenre(GENRE_IDS.comedy, "movie") });
+
+  // For all users
+  const animation = useQuery({ queryKey: ["animation-all"], queryFn: () => getByGenre(GENRE_IDS.animation, "movie") });
+  const kidsTeens = useQuery({ queryKey: ["kids-teens"], queryFn: () => getByGenre(GENRE_IDS.family, "movie") });
+  const documentaries = useQuery({ queryKey: ["documentaries"], queryFn: () => getByGenre(GENRE_IDS.documentary, "movie") });
+  const sciFiFantasy = useQuery({ queryKey: ["scifi-fantasy"], queryFn: () => getByGenre(GENRE_IDS.sciFi, "movie") });
+
+  // Discovery
+  const upcoming = useQuery({ queryKey: ["upcoming-movies"], queryFn: () => getUpcoming() });
+  const topRated = useQuery({ queryKey: ["top-rated-movies"], queryFn: () => getTopRated("movie") });
   const hiddenGems = useQuery({ queryKey: ["hidden-gems"], queryFn: () => getHiddenGems("movie") });
 
   return (
@@ -41,7 +64,6 @@ const HomePage = () => {
         <p className="text-xs text-muted-foreground mt-0.5">Danylix Verse</p>
       </header>
 
-      {/* Hero Banner */}
       <HeroBanner movies={hero.data ?? []} />
 
       {/* Search */}
@@ -51,27 +73,43 @@ const HomePage = () => {
           className="flex w-full items-center gap-3 rounded-lg bg-card px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted"
         >
           <Search className="w-4 h-4 text-primary" />
-          Search movies or series…
+          Search movies, series, or anime…
         </button>
       </div>
 
       <div className="space-y-6">
         <ContinueWatchingRow />
-        <MovieRow title="Trending Today" movies={trendingToday.data ?? []} isLoading={trendingToday.isLoading} slug="trending-today" />
-        <MovieRow title="Picked For You" movies={pickedForYou.data ?? []} isLoading={pickedForYou.isLoading} mediaType="movie" slug="picked-for-you" />
-        <MovieRow title="Popular This Week" movies={popularWeek.data ?? []} isLoading={popularWeek.isLoading} slug="popular-this-week" />
-        <MovieRow title="Top Rated Movies" movies={topRated.data ?? []} isLoading={topRated.isLoading} mediaType="movie" slug="top-rated-movies" />
-        <MovieRow title="Action Movies" movies={action.data ?? []} isLoading={action.isLoading} mediaType="movie" slug="action-movies" />
-        <MovieRow title="Comedy Movies" movies={comedy.data ?? []} isLoading={comedy.isLoading} mediaType="movie" slug="comedy-movies" />
-        <MovieRow title="Sci-Fi Movies" movies={sciFi.data ?? []} isLoading={sciFi.isLoading} mediaType="movie" slug="scifi-movies" />
-        <MovieRow title="Horror Movies" movies={horror.data ?? []} isLoading={horror.isLoading} mediaType="movie" slug="horror-movies" />
-        <MovieRow title="Popular Series" movies={popularSeries.data ?? []} isLoading={popularSeries.isLoading} mediaType="tv" slug="popular-series" />
-        <MovieRow title="Crime Series" movies={crime.data ?? []} isLoading={crime.isLoading} mediaType="tv" slug="crime-series" />
-        <MovieRow title="Mystery Series" movies={mystery.data ?? []} isLoading={mystery.isLoading} mediaType="tv" slug="mystery-series" />
-        <MovieRow title="Popular Anime" movies={anime.data ?? []} isLoading={anime.isLoading} mediaType="tv" slug="popular-anime" />
-        <MovieRow title="Trending Anime" movies={trendingAnime.data ?? []} isLoading={trendingAnime.isLoading} mediaType="tv" slug="trending-anime" />
-        <MovieRow title="Korean Dramas" movies={kDrama.data ?? []} isLoading={kDrama.isLoading} mediaType="tv" slug="korean-dramas" />
-        <MovieRow title="Japanese Series" movies={jpSeries.data ?? []} isLoading={jpSeries.isLoading} mediaType="tv" slug="japanese-series" />
+
+        {/* Core */}
+        <MovieRow title="Trending Now" movies={trendingToday.data ?? []} isLoading={trendingToday.isLoading} slug="trending-today" />
+        <MovieRow title="Popular Movies" movies={popularMovies.data ?? []} isLoading={popularMovies.isLoading} mediaType="movie" slug="popular-movies" />
+        <MovieRow title="Popular TV Shows" movies={popularSeries.data ?? []} isLoading={popularSeries.isLoading} mediaType="tv" slug="popular-series" />
+
+        {/* Anime */}
+        <MovieRow title="Trending Anime" movies={trendingAnime.data ?? []} isLoading={trendingAnime.isLoading} mediaType="anime" />
+        <MovieRow title="Popular Anime" movies={popularAnime.data ?? []} isLoading={popularAnime.isLoading} mediaType="anime" />
+
+        {/* Global */}
+        <MovieRow title="Nollywood" movies={nollywood.data ?? []} isLoading={nollywood.isLoading} mediaType="tv" slug="nollywood" />
+        <MovieRow title="K-Drama" movies={kDrama.data ?? []} isLoading={kDrama.isLoading} mediaType="tv" slug="korean-dramas" />
+        <MovieRow title="C-Drama" movies={cDrama.data ?? []} isLoading={cDrama.isLoading} mediaType="tv" slug="chinese-dramas" />
+        <MovieRow title="Thai Drama" movies={thaiDrama.data ?? []} isLoading={thaiDrama.isLoading} mediaType="tv" slug="thai-dramas" />
+        <MovieRow title="South African Drama" movies={saDrama.data ?? []} isLoading={saDrama.isLoading} mediaType="tv" slug="south-african-drama" />
+
+        {/* Curated */}
+        <MovieRow title="Romance" movies={romance.data ?? []} isLoading={romance.isLoading} mediaType="movie" slug="romance" />
+        <MovieRow title="Thriller & Mystery" movies={thriller.data ?? []} isLoading={thriller.isLoading} mediaType="movie" slug="thriller-mystery" />
+        <MovieRow title="Comedy" movies={comedy.data ?? []} isLoading={comedy.isLoading} mediaType="movie" slug="comedy-movies" />
+
+        {/* For All Users */}
+        <MovieRow title="Animation" movies={animation.data ?? []} isLoading={animation.isLoading} mediaType="movie" slug="animation" />
+        <MovieRow title="Kids & Teens" movies={kidsTeens.data ?? []} isLoading={kidsTeens.isLoading} mediaType="movie" slug="kids-teens" />
+        <MovieRow title="Documentaries" movies={documentaries.data ?? []} isLoading={documentaries.isLoading} mediaType="movie" slug="documentaries" />
+        <MovieRow title="Sci-Fi & Fantasy" movies={sciFiFantasy.data ?? []} isLoading={sciFiFantasy.isLoading} mediaType="movie" slug="scifi-fantasy" />
+
+        {/* Discovery */}
+        <MovieRow title="Upcoming" movies={upcoming.data ?? []} isLoading={upcoming.isLoading} mediaType="movie" slug="upcoming" />
+        <MovieRow title="Top Rated" movies={topRated.data ?? []} isLoading={topRated.isLoading} mediaType="movie" slug="top-rated-movies" />
         <MovieRow title="Hidden Gems" movies={hiddenGems.data ?? []} isLoading={hiddenGems.isLoading} mediaType="movie" slug="hidden-gems" />
       </div>
     </div>

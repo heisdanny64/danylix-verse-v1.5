@@ -3,15 +3,26 @@ import { posterUrl, getDisplayInfo, type TMDBMovie } from "@/lib/tmdb";
 
 interface MovieCardProps {
   movie: TMDBMovie;
-  mediaType?: "movie" | "tv";
+  mediaType?: "movie" | "tv" | "anime";
   compact?: boolean;
 }
 
 const MovieCard = ({ movie, mediaType, compact }: MovieCardProps) => {
   const { title, year } = getDisplayInfo(movie);
   const type = mediaType || movie.media_type || "movie";
+  const isAnimeCard = (movie as any)._isAnimeCard === true;
 
-  const link = type === "tv" ? `/series/${movie.id}` : `/movie/movie-${movie.id}`;
+  const link =
+    type === "anime"
+      ? `/details/anime/${movie.id}`
+      : type === "tv"
+        ? `/details/tv/${movie.id}`
+        : `/details/movie/${movie.id}`;
+
+  // For anime cards, poster_path is a full URL
+  const posterSrc = isAnimeCard
+    ? movie.poster_path || "/placeholder.svg"
+    : posterUrl(movie.poster_path);
 
   return (
     <Link
@@ -22,7 +33,7 @@ const MovieCard = ({ movie, mediaType, compact }: MovieCardProps) => {
       <div className="relative overflow-hidden rounded-lg transition-all duration-300 group-hover:shadow-[0_0_20px_hsl(var(--primary)/0.4)] group-hover:ring-1 group-hover:ring-primary/50">
         <div className="aspect-[2/3] bg-muted">
           <img
-            src={posterUrl(movie.poster_path)}
+            src={posterSrc}
             alt={title}
             className="h-full w-full object-cover"
             loading="lazy"

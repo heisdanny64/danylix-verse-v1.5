@@ -15,6 +15,7 @@ const BottomNav = () => {
   if (
     path.startsWith("/movie/") ||
     path.startsWith("/series/") ||
+    path.startsWith("/details/") ||
     path.startsWith("/player/") ||
     path.startsWith("/category/") ||
     path === "/search"

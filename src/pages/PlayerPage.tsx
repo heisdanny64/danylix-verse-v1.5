@@ -3,10 +3,12 @@ import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minimize, Play, ShieldCheck, RefreshCw, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { CHANNELS } from "@/lib/player";
-import { getMovieDetails, getSeasonDetails, getDisplayInfo, isAnime } from "@/lib/tmdb";
+import { getMovieDetails, getSeasonDetails, getDisplayInfo } from "@/lib/tmdb";
+import { getAnimeDetails } from "@/lib/anilist";
 import { useLibrary } from "@/lib/library";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import HlsPlayer from "@/components/HlsPlayer";
 
@@ -23,53 +25,85 @@ const PlayerPage = () => {
   const [playerState, setPlayerState] = useState<PlayerState>("loading");
   const videoWrapperRef = useRef<HTMLDivElement>(null);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const fallbackTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const { updateProgress } = useLibrary();
 
-  const mediaType = (type as "movie" | "tv") || "movie";
-  const tmdbId = Number(id);
+  const contentType = (type as "movie" | "tv" | "anime") || "movie";
+  const isAnimeContent = contentType === "anime";
+  const numericId = Number(id);
   const season = Number(searchParams.get("season")) || 1;
   const episode = Number(searchParams.get("episode")) || 1;
 
-  const { data: details, isLoading: detailsLoading } = useQuery({
-    queryKey: ["player-detail", mediaType, tmdbId],
-    queryFn: () => getMovieDetails(tmdbId, mediaType),
-    enabled: !!tmdbId,
+  // TMDB details (movie/tv only)
+  const { data: tmdbDetails, isLoading: tmdbLoading } = useQuery({
+    queryKey: ["player-detail", contentType, numericId],
+    queryFn: () => getMovieDetails(numericId, contentType as "movie" | "tv"),
+    enabled: !isAnimeContent && !!numericId,
+  });
+
+  // AniList details (anime only)
+  const { data: animeDetails, isLoading: animeLoading } = useQuery({
+    queryKey: ["player-anime-detail", numericId],
+    queryFn: () => getAnimeDetails(numericId),
+    enabled: isAnimeContent && !!numericId,
   });
 
   const { data: seasonData } = useQuery({
-    queryKey: ["player-season", tmdbId, season],
-    queryFn: () => getSeasonDetails(tmdbId, season),
-    enabled: mediaType === "tv" && !!tmdbId,
+    queryKey: ["player-season", numericId, season],
+    queryFn: () => getSeasonDetails(numericId, season),
+    enabled: contentType === "tv" && !!numericId,
   });
 
-  const totalEpisodes = seasonData?.episodes?.length || 0;
-  const canPrev = mediaType === "tv" && episode > 1;
-  const canNext = mediaType === "tv" && episode < totalEpisodes;
-  const animeTitle = details ? isAnime(details as any) : false;
-  const channel = CHANNELS[activeChannel] || CHANNELS[0];
-  const playerUrl = (!channel.disabled && tmdbId) ? channel.getUrl(mediaType, tmdbId, season, episode) : "";
-  const displayInfo = details ? getDisplayInfo(details as any) : null;
+  const detailsLoading = isAnimeContent ? animeLoading : tmdbLoading;
+  const hasDetails = isAnimeContent ? !!animeDetails : !!tmdbDetails;
+
+  const totalEpisodes = isAnimeContent
+    ? (animeDetails?.seasons.find(s => s.seasonNumber === season)?.episodes || animeDetails?.episodes || 0)
+    : (seasonData?.episodes?.length || 0);
+  const canPrev = (contentType === "tv" || isAnimeContent) && episode > 1;
+  const canNext = (contentType === "tv" || isAnimeContent) && episode < totalEpisodes;
+
+  // Filter channels for anime
+  const availableChannels = isAnimeContent
+    ? CHANNELS.filter((ch) => !ch.disabledForAnime)
+    : CHANNELS;
+
+  const channel = availableChannels[activeChannel] || availableChannels[0];
+  const playerUrl = (!channel.disabled && numericId)
+    ? channel.getUrl(contentType, numericId, season, episode, subDub)
+    : "";
+
+  // Display info
+  const displayTitle = isAnimeContent
+    ? animeDetails?.title || "Loading..."
+    : tmdbDetails ? getDisplayInfo(tmdbDetails as any).title : "Loading...";
+  const displayYear = isAnimeContent
+    ? animeDetails?.year
+    : tmdbDetails ? getDisplayInfo(tmdbDetails as any).year : null;
+  const displayRating = isAnimeContent
+    ? animeDetails?.rating
+    : tmdbDetails?.vote_average;
 
   // Save progress on mount
   useEffect(() => {
-    if (details) {
+    if (!isAnimeContent && tmdbDetails) {
       const movie = {
-        id: details.id,
-        title: details.title,
-        name: details.name,
-        overview: details.overview,
-        poster_path: details.poster_path,
-        backdrop_path: details.backdrop_path,
-        vote_average: details.vote_average,
-        release_date: details.release_date,
-        first_air_date: details.first_air_date,
-        genre_ids: details.genres.map((g: any) => g.id),
-        media_type: mediaType,
-        original_language: details.original_language,
+        id: tmdbDetails.id,
+        title: tmdbDetails.title,
+        name: tmdbDetails.name,
+        overview: tmdbDetails.overview,
+        poster_path: tmdbDetails.poster_path,
+        backdrop_path: tmdbDetails.backdrop_path,
+        vote_average: tmdbDetails.vote_average,
+        release_date: tmdbDetails.release_date,
+        first_air_date: tmdbDetails.first_air_date,
+        genre_ids: tmdbDetails.genres.map((g: any) => g.id),
+        media_type: contentType,
+        original_language: tmdbDetails.original_language,
       };
-      updateProgress(movie, mediaType, 10, season, episode);
+      updateProgress(movie, contentType as "movie" | "tv", 10, season, episode);
     }
-  }, [details, mediaType, season, episode]);
+  }, [tmdbDetails, contentType, season, episode]);
 
   // Reset state when channel or URL changes (iframe only)
   useEffect(() => {
@@ -84,6 +118,15 @@ const PlayerPage = () => {
     return () => { if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current); };
   }, [playerUrl, activeChannel, channel.type]);
 
+  // Auto-fallback for movie/tv: 7s timeout per channel
+  useEffect(() => {
+    if (isAnimeContent || channel.type !== "hls") return;
+    // Fallback handled by HlsPlayer onError
+    return () => {
+      if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
+    };
+  }, [activeChannel, isAnimeContent, channel.type]);
+
   // Dev logging
   useEffect(() => {
     if (import.meta.env.DEV && playerUrl) {
@@ -91,10 +134,11 @@ const PlayerPage = () => {
         channel: channel.name,
         type: channel.type,
         url: playerUrl,
-        mediaType,
-        tmdbId,
-        season: mediaType === "tv" ? season : undefined,
-        episode: mediaType === "tv" ? episode : undefined,
+        contentType,
+        id: numericId,
+        season: contentType !== "movie" ? season : undefined,
+        episode: contentType !== "movie" ? episode : undefined,
+        subDub: isAnimeContent ? subDub : undefined,
       });
     }
   }, [playerUrl, activeChannel]);
@@ -118,13 +162,17 @@ const PlayerPage = () => {
   }, []);
 
   const goEpisode = (ep: number) => {
-    navigate(`/player/tv/${tmdbId}?season=${season}&episode=${ep}`, { replace: true });
+    if (isAnimeContent) {
+      navigate(`/player/anime/${numericId}?season=${season}&episode=${ep}`, { replace: true });
+    } else {
+      navigate(`/player/tv/${numericId}?season=${season}&episode=${ep}`, { replace: true });
+    }
   };
 
   const handleChannelSwitch = (index: number) => {
-    const ch = CHANNELS[index];
+    const ch = availableChannels[index];
     if (ch.disabled) {
-      toast({ title: "Channel 3 is coming soon", description: "This channel will be available in a future update." });
+      toast({ title: "Channel unavailable", description: "This channel is not available." });
       return;
     }
     setActiveChannel(index);
@@ -132,10 +180,20 @@ const PlayerPage = () => {
   };
 
   const handleHlsError = useCallback(() => {
-    // Auto-fallback to Channel 2
-    toast({ title: "Switching to Channel 2...", description: "Stream unavailable, trying alternative source." });
-    setActiveChannel(1);
-  }, []);
+    if (isAnimeContent) {
+      // No fallback for anime
+      toast({ title: "Stream unavailable", description: "Could not load anime stream. Please try again later." });
+      return;
+    }
+    // Auto-fallback chain: Ch1 → Ch2 → Ch3
+    const nextIndex = activeChannel + 1;
+    if (nextIndex < availableChannels.length) {
+      toast({ title: `Switching to ${availableChannels[nextIndex].name}...`, description: "Stream unavailable, trying alternative source." });
+      setActiveChannel(nextIndex);
+    } else {
+      toast({ title: "All channels unavailable", description: "Could not load from any source." });
+    }
+  }, [isAnimeContent, activeChannel, availableChannels]);
 
   const toggleFullscreen = async () => {
     const el = videoWrapperRef.current;
@@ -165,7 +223,7 @@ const PlayerPage = () => {
     setPlayerState("ready");
   };
 
-  if (detailsLoading || !details) {
+  if (detailsLoading || !hasDetails) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <div className="w-full max-w-[1100px] space-y-4">
@@ -191,11 +249,11 @@ const PlayerPage = () => {
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{displayInfo?.title}</p>
+          <p className="text-sm font-semibold text-foreground truncate">{displayTitle}</p>
           <p className="text-xs text-muted-foreground">
-            {displayInfo?.year && displayInfo.year}
-            {details.vote_average > 0 && ` · ⭐ ${details.vote_average.toFixed(1)}`}
-            {mediaType === "tv" && ` · S${season} · E${episode}`}
+            {displayYear && displayYear}
+            {displayRating && displayRating > 0 && ` · ⭐ ${displayRating.toFixed(1)}`}
+            {contentType !== "movie" && ` · S${season} · E${episode}`}
           </p>
         </div>
         {!isHls && (
@@ -208,9 +266,9 @@ const PlayerPage = () => {
         )}
       </div>
 
-      {/* Channel switcher */}
-      <div className="flex gap-2 px-4 py-2 overflow-x-auto">
-        {CHANNELS.map((ch, i) => (
+      {/* Channel switcher + Sub/Dub toggle */}
+      <div className="flex gap-2 px-4 py-2 overflow-x-auto items-center">
+        {availableChannels.map((ch, i) => (
           <button
             key={ch.id}
             onClick={() => handleChannelSwitch(i)}
@@ -223,28 +281,18 @@ const PlayerPage = () => {
             }`}
           >
             {ch.name}
-            {ch.disabled && <span className="ml-1 text-[10px] opacity-60">({ch.label})</span>}
           </button>
         ))}
 
-        {animeTitle && (
-          <div className="flex rounded-full overflow-hidden border border-border ml-auto">
-            <button
-              onClick={() => setSubDub("sub")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                subDub === "sub" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground"
-              }`}
-            >
-              Sub
-            </button>
-            <button
-              onClick={() => setSubDub("dub")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                subDub === "dub" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground"
-              }`}
-            >
-              Dub
-            </button>
+        {/* Sub/Dub toggle — anime only */}
+        {isAnimeContent && (
+          <div className="flex items-center gap-2 ml-auto">
+            <span className={`text-xs font-medium ${subDub === "sub" ? "text-primary" : "text-muted-foreground"}`}>Sub</span>
+            <Switch
+              checked={subDub === "dub"}
+              onCheckedChange={(checked) => setSubDub(checked ? "dub" : "sub")}
+            />
+            <span className={`text-xs font-medium ${subDub === "dub" ? "text-primary" : "text-muted-foreground"}`}>Dub</span>
           </div>
         )}
       </div>
@@ -283,7 +331,7 @@ const PlayerPage = () => {
                   referrerPolicy="origin-when-cross-origin"
                 />
 
-                {/* Shield overlay for iframe channels */}
+                {/* Shield overlay */}
                 {shieldActive && (
                   <div
                     className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
@@ -319,7 +367,7 @@ const PlayerPage = () => {
                   </button>
                 )}
 
-                {/* Fullscreen button overlay for iframe */}
+                {/* Fullscreen button overlay */}
                 <button
                   onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
                   className="absolute bottom-3 right-3 z-20 w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center text-foreground hover:bg-background/90 transition-colors"
@@ -353,7 +401,7 @@ const PlayerPage = () => {
       </div>
 
       {/* Episode navigation */}
-      {mediaType === "tv" && (
+      {contentType !== "movie" && (
         <div className="flex items-center justify-between px-4 py-3 max-w-[1100px] mx-auto">
           <Button variant="outline" size="sm" disabled={!canPrev} onClick={() => goEpisode(episode - 1)} className="gap-1">
             <ChevronLeft className="w-4 h-4" /> Previous

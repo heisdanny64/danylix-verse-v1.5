@@ -194,7 +194,26 @@ export const GENRE_IDS = {
   horror: 27,
   mystery: 9648,
   sciFi: 878,
+  romance: 10749,
+  thriller: 53,
+  fantasy: 14,
+  documentary: 99,
+  family: 10751,
 } as const;
+
+export async function getByOriginCountry(country: string, mediaType: "movie" | "tv" = "tv", page = 1) {
+  const data = await tmdbFetch<{ results: TMDBMovie[] }>(`/discover/${mediaType}`, {
+    with_origin_country: country,
+    sort_by: "popularity.desc",
+    page: String(page),
+  });
+  return data.results;
+}
+
+export async function getUpcoming(page = 1) {
+  const data = await tmdbFetch<{ results: TMDBMovie[] }>("/movie/upcoming", { page: String(page) });
+  return data.results;
+}
 
 // Category config for View All pages
 export interface CategoryConfig {
@@ -205,19 +224,21 @@ export interface CategoryConfig {
 
 export const CATEGORY_MAP: Record<string, CategoryConfig> = {
   "trending-today": { title: "Trending Today", mediaType: "movie", fetchFn: () => getTrending("all", "day") },
-  "picked-for-you": { title: "Picked For You", mediaType: "movie", fetchFn: (p) => getPopular("movie", p) },
-  "popular-this-week": { title: "Popular This Week", mediaType: "movie", fetchFn: () => getTrending("all", "week") },
-  "top-rated-movies": { title: "Top Rated Movies", mediaType: "movie", fetchFn: (p) => getTopRated("movie", p) },
-  "action-movies": { title: "Action Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.action, "movie", p) },
-  "comedy-movies": { title: "Comedy Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.comedy, "movie", p) },
-  "scifi-movies": { title: "Sci-Fi Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.sciFi, "movie", p) },
-  "horror-movies": { title: "Horror Movies", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.horror, "movie", p) },
-  "popular-series": { title: "Popular Series", mediaType: "tv", fetchFn: (p) => getPopular("tv", p) },
-  "crime-series": { title: "Crime Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.crime, "tv", p) },
-  "mystery-series": { title: "Mystery Series", mediaType: "tv", fetchFn: (p) => getByGenre(GENRE_IDS.mystery, "tv", p) },
-  "popular-anime": { title: "Popular Anime", mediaType: "tv", fetchFn: (p) => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv", p) },
-  "trending-anime": { title: "Trending Anime", mediaType: "tv", fetchFn: (p) => getByGenreAndLanguage(GENRE_IDS.animation, "ja", "tv", p) },
-  "korean-dramas": { title: "Korean Dramas", mediaType: "tv", fetchFn: (p) => getByLanguage("ko", "tv", p) },
-  "japanese-series": { title: "Japanese Series", mediaType: "tv", fetchFn: (p) => getByLanguage("ja", "tv", p) },
+  "popular-movies": { title: "Popular Movies", mediaType: "movie", fetchFn: (p) => getPopular("movie", p) },
+  "popular-series": { title: "Popular TV Shows", mediaType: "tv", fetchFn: (p) => getPopular("tv", p) },
+  "top-rated-movies": { title: "Top Rated", mediaType: "movie", fetchFn: (p) => getTopRated("movie", p) },
+  "comedy-movies": { title: "Comedy", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.comedy, "movie", p) },
+  "romance": { title: "Romance", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.romance, "movie", p) },
+  "thriller-mystery": { title: "Thriller & Mystery", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.thriller, "movie", p) },
+  "animation": { title: "Animation", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.animation, "movie", p) },
+  "kids-teens": { title: "Kids & Teens", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.family, "movie", p) },
+  "documentaries": { title: "Documentaries", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.documentary, "movie", p) },
+  "scifi-fantasy": { title: "Sci-Fi & Fantasy", mediaType: "movie", fetchFn: (p) => getByGenre(GENRE_IDS.sciFi, "movie", p) },
+  "upcoming": { title: "Upcoming", mediaType: "movie", fetchFn: (p) => getUpcoming(p) },
   "hidden-gems": { title: "Hidden Gems", mediaType: "movie", fetchFn: (p) => getHiddenGems("movie", p) },
+  "nollywood": { title: "Nollywood", mediaType: "tv", fetchFn: (p) => getByOriginCountry("NG", "tv", p) },
+  "korean-dramas": { title: "K-Drama", mediaType: "tv", fetchFn: (p) => getByLanguage("ko", "tv", p) },
+  "chinese-dramas": { title: "C-Drama", mediaType: "tv", fetchFn: (p) => getByLanguage("zh", "tv", p) },
+  "thai-dramas": { title: "Thai Drama", mediaType: "tv", fetchFn: (p) => getByLanguage("th", "tv", p) },
+  "south-african-drama": { title: "South African Drama", mediaType: "tv", fetchFn: (p) => getByOriginCountry("ZA", "tv", p) },
 };
