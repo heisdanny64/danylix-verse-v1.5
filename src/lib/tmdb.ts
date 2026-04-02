@@ -242,5 +242,3 @@ export const CATEGORY_MAP: Record<string, CategoryConfig> = {
   "thai-dramas": { title: "Thai Drama", mediaType: "tv", fetchFn: (p) => getByLanguage("th", "tv", p) },
   "south-african-drama": { title: "South African Drama", mediaType: "tv", fetchFn: (p) => getByOriginCountry("ZA", "tv", p) },
 };
-  "hidden-gems": { title: "Hidden Gems", mediaType: "movie", fetchFn: (p) => getHiddenGems("movie", p) },
-};
