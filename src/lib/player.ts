@@ -10,6 +10,7 @@ export interface Channel {
   getUrl: (type: "movie" | "tv" | "anime", tmdbId: number, season?: number, episode?: number, subDub?: "sub" | "dub") => string;
 }
 
+// Movie/TV channels (unchanged)
 export const CHANNELS: Channel[] = [
   {
     id: 1,
@@ -19,10 +20,7 @@ export const CHANNELS: Channel[] = [
     type: "iframe",
     sandbox: "",
     allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
-    getUrl: (type, id, season, episode, subDub = "sub") => {
-      if (type === "anime") {
-        return `https://apicinetaro.falex43350.workers.dev/anime/${id}/${season || 1}/${episode || 1}/${subDub}`;
-      }
+    getUrl: (type, id, season, episode) => {
       if (type === "tv" && season && episode) {
         return `https://apicinetaro.falex43350.workers.dev/tv/${id}/${season}/${episode}/english`;
       }
@@ -59,6 +57,34 @@ export const CHANNELS: Channel[] = [
         return `https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1&s=${season}&e=${episode}`;
       }
       return `https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1`;
+    },
+  },
+];
+
+// Anime-only channels
+export const ANIME_CHANNELS: Channel[] = [
+  {
+    id: 10,
+    name: "Megaplay",
+    label: "Megaplay",
+    disabled: false,
+    type: "iframe",
+    sandbox: "",
+    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
+    getUrl: (_type, id, _season, episode, subDub = "sub") => {
+      return `https://megaplay.buzz/stream/ani/${id}/${episode || 1}/${subDub}`;
+    },
+  },
+  {
+    id: 11,
+    name: "Cinetaro",
+    label: "Cinetaro",
+    disabled: false,
+    type: "iframe",
+    sandbox: "",
+    allow: "autoplay; encrypted-media; fullscreen; picture-in-picture",
+    getUrl: (_type, id, _season, episode, subDub = "sub") => {
+      return `https://apicinetaro.falex43350.workers.dev/anime/${id}/1/${episode || 1}/${subDub}`;
     },
   },
 ];

@@ -1,19 +1,39 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { CATEGORY_MAP, type TMDBMovie } from "@/lib/tmdb";
+import { getTrendingAnime, getPopularAnime, animeToCard } from "@/lib/anilist";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+
+// Anime category configs
+const ANIME_CATEGORIES: Record<string, { title: string; mediaType: "anime"; fetchFn: (page?: number) => Promise<TMDBMovie[]> }> = {
+  "trending-anime": {
+    title: "Trending Anime",
+    mediaType: "anime",
+    fetchFn: async (page = 1) => (await getTrendingAnime(page)).map(animeToCard),
+  },
+  "popular-anime": {
+    title: "Popular Anime",
+    mediaType: "anime",
+    fetchFn: async (page = 1) => (await getPopularAnime(page)).map(animeToCard),
+  },
+};
 
 const CategoryPage = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const config = slug ? CATEGORY_MAP[slug] : undefined;
+
+  const tmdbConfig = slug ? CATEGORY_MAP[slug] : undefined;
+  const animeConfig = slug ? ANIME_CATEGORIES[slug] : undefined;
+  const config = tmdbConfig || animeConfig;
+  const mediaType = animeConfig?.mediaType || tmdbConfig?.mediaType || "movie";
+
   const [page, setPage] = useState(1);
   const [allMovies, setAllMovies] = useState<TMDBMovie[]>([]);
   const [hasMore, setHasMore] = useState(true);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { isLoading, isFetching } = useQuery({
     queryKey: ["category", slug, page],
@@ -32,6 +52,26 @@ const CategoryPage = () => {
     },
     enabled: !!config,
   });
+
+  // Infinite scroll via IntersectionObserver
+  const loadMore = useCallback(() => {
+    if (!isFetching && hasMore) {
+      setPage((p) => p + 1);
+    }
+  }, [isFetching, hasMore]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMore();
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   if (!config) {
     return (
@@ -62,23 +102,15 @@ const CategoryPage = () => {
             ))
           : allMovies.map((movie) => (
               <div key={movie.id} className="w-full">
-                <MovieCard movie={movie} mediaType={config.mediaType} compact />
+                <MovieCard movie={movie} mediaType={mediaType as any} compact />
               </div>
             ))}
       </div>
 
-      {/* Load More */}
+      {/* Infinite scroll sentinel */}
       {!loadingFirstPage && hasMore && (
-        <div className="flex justify-center px-4 py-6">
-          <Button
-            variant="outline"
-            onClick={() => setPage((p) => p + 1)}
-            disabled={isFetching}
-            className="gap-2"
-          >
-            {isFetching && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isFetching ? "Loading…" : "Load More"}
-          </Button>
+        <div ref={sentinelRef} className="flex justify-center px-4 py-6">
+          {isFetching && <Loader2 className="w-6 h-6 animate-spin text-primary" />}
         </div>
       )}
     </div>
