@@ -1,8 +1,9 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, Plus, Play, Check, Download } from "lucide-react";
-import { getMovieDetails, getSimilar, backdropUrl, getDisplayInfo, type TMDBEpisode } from "@/lib/tmdb";
-import { getAnimeDetails, type AnimeItem } from "@/lib/anilist";
+import { getMovieDetails, backdropUrl, getDisplayInfo, type TMDBEpisode } from "@/lib/tmdb";
+import { getAnimeDetails, getAnimeRecommendations, animeToCard, type AnimeItem } from "@/lib/anilist";
+import { getMovieTVRecommendations, getAnimeRecommendationsFromTasteDive } from "@/lib/tastedive";
 import { useLibrary } from "@/lib/library";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,10 +29,12 @@ const DetailsPage = () => {
     enabled: contentType !== "anime" && !!numericId,
   });
 
-  const { data: similar } = useQuery({
-    queryKey: ["similar", contentType, numericId],
-    queryFn: () => getSimilar(numericId, contentType as "movie" | "tv"),
-    enabled: contentType !== "anime" && !!numericId,
+  // Movie/TV recommendations via TasteDive → TMDB
+  const tmdbTitle = tmdbDetail ? getDisplayInfo(tmdbDetail as any).title : "";
+  const { data: movieTvRecs } = useQuery({
+    queryKey: ["tastedive-recs", contentType, tmdbTitle],
+    queryFn: () => getMovieTVRecommendations(tmdbTitle, contentType as "movie" | "tv"),
+    enabled: contentType !== "anime" && !!tmdbTitle,
   });
 
   // AniList query (anime only)
@@ -182,9 +185,10 @@ const DetailsPage = () => {
         )}
       </div>
 
-      {similar && similar.length > 0 && (
+      {/* More Like This — TasteDive powered */}
+      {movieTvRecs && movieTvRecs.length > 0 && (
         <div className="mt-8">
-          <MovieRow title="More Like This" movies={similar} mediaType={contentType as "movie" | "tv"} />
+          <MovieRow title="More Like This" movies={movieTvRecs} mediaType={contentType as "movie" | "tv"} />
         </div>
       )}
     </div>
@@ -210,13 +214,36 @@ const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlis
   }
 
   const inWatchlist = isInWatchlist(anime.id);
-  const hasMultipleSeasons = anime.seasons.length > 1;
 
-  const handlePlayEpisode = (season: number, episode: number) => {
-    // Find the correct anime ID for this season
-    const seasonData = anime.seasons.find((s) => s.seasonNumber === season);
-    const animeId = seasonData?.id || anime.id;
-    navigate(`/player/anime/${animeId}?season=${season}&episode=${episode}`);
+  // AniList native recs + TasteDive validated recs, merged
+  const { data: animeRecs } = useQuery({
+    queryKey: ["anime-recs-merged", anime.id, anime.title],
+    queryFn: async () => {
+      const [anilistRecs, tasteDiveRecs] = await Promise.allSettled([
+        getAnimeRecommendations(anime.id),
+        getAnimeRecommendationsFromTasteDive(anime.title),
+      ]);
+
+      const anilistCards = anilistRecs.status === "fulfilled" ? anilistRecs.value.map(animeToCard) : [];
+      const tdCards = tasteDiveRecs.status === "fulfilled" ? tasteDiveRecs.value : [];
+
+      // Merge and deduplicate by id
+      const seen = new Set<number>();
+      const merged = [];
+      for (const card of [...anilistCards, ...tdCards]) {
+        if (!seen.has(card.id)) {
+          seen.add(card.id);
+          merged.push(card);
+        }
+        if (merged.length >= 12) break;
+      }
+      // Remove self
+      return merged.filter((c) => c.id !== anime.id);
+    },
+  });
+
+  const handlePlayEpisode = (_season: number, episode: number) => {
+    navigate(`/player/anime/${anime.id}?season=1&episode=${episode}`);
   };
 
   return (
@@ -246,7 +273,6 @@ const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlis
             <span className="font-semibold">{anime.rating.toFixed(1)}</span>
           </div>
           {anime.episodes > 0 && <span className="text-muted-foreground">{anime.episodes} Episodes</span>}
-          {hasMultipleSeasons && <span className="text-muted-foreground">{anime.seasons.length} Seasons</span>}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -272,7 +298,6 @@ const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlis
             variant="outline"
             className="gap-1.5"
             onClick={() => {
-              // Store anime in watchlist with anime type marker
               const m = {
                 id: anime.id,
                 title: anime.title,
@@ -299,37 +324,24 @@ const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlis
           </Button>
         </div>
 
-        {/* Episodes */}
+        {/* Episodes — flat list only, no seasons dropdown */}
         <div className="pt-2">
           <h2 className="text-lg font-bold text-foreground mb-2">Episodes</h2>
-          {hasMultipleSeasons ? (
-            <Accordion type="single" collapsible defaultValue="season-1">
-              {anime.seasons.map((s) => (
-                <AccordionItem key={s.seasonNumber} value={`season-${s.seasonNumber}`}>
-                  <AccordionTrigger className="text-sm">
-                    Season {s.seasonNumber}: {s.title} ({s.episodes} episodes)
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <AnimeEpisodeList
-                      animeId={s.id}
-                      seasonNumber={s.seasonNumber}
-                      totalEpisodes={s.episodes}
-                      onPlayEpisode={handlePlayEpisode}
-                    />
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          ) : (
-            <AnimeEpisodeList
-              animeId={anime.id}
-              seasonNumber={1}
-              totalEpisodes={anime.episodes}
-              onPlayEpisode={handlePlayEpisode}
-            />
-          )}
+          <AnimeEpisodeList
+            animeId={anime.id}
+            seasonNumber={1}
+            totalEpisodes={anime.episodes}
+            onPlayEpisode={handlePlayEpisode}
+          />
         </div>
       </div>
+
+      {/* More Like This */}
+      {animeRecs && animeRecs.length > 0 && (
+        <div className="mt-8">
+          <MovieRow title="More Like This" movies={animeRecs} mediaType="anime" />
+        </div>
+      )}
     </div>
   );
 };

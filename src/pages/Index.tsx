@@ -86,8 +86,8 @@ const HomePage = () => {
         <MovieRow title="Popular TV Shows" movies={popularSeries.data ?? []} isLoading={popularSeries.isLoading} mediaType="tv" slug="popular-series" />
 
         {/* Anime */}
-        <MovieRow title="Trending Anime" movies={trendingAnime.data ?? []} isLoading={trendingAnime.isLoading} mediaType="anime" />
-        <MovieRow title="Popular Anime" movies={popularAnime.data ?? []} isLoading={popularAnime.isLoading} mediaType="anime" />
+        <MovieRow title="Trending Anime" movies={trendingAnime.data ?? []} isLoading={trendingAnime.isLoading} mediaType="anime" slug="trending-anime" />
+        <MovieRow title="Popular Anime" movies={popularAnime.data ?? []} isLoading={popularAnime.isLoading} mediaType="anime" slug="popular-anime" />
 
         {/* Global */}
         <MovieRow title="Nollywood" movies={nollywood.data ?? []} isLoading={nollywood.isLoading} mediaType="tv" slug="nollywood" />

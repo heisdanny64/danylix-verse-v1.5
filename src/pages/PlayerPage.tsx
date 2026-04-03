@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minimize, Play, ShieldCheck, RefreshCw, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { CHANNELS } from "@/lib/player";
+import { CHANNELS, ANIME_CHANNELS } from "@/lib/player";
 import { getMovieDetails, getSeasonDetails, getDisplayInfo } from "@/lib/tmdb";
 import { getAnimeDetails } from "@/lib/anilist";
 import { useLibrary } from "@/lib/library";
@@ -58,15 +58,13 @@ const PlayerPage = () => {
   const hasDetails = isAnimeContent ? !!animeDetails : !!tmdbDetails;
 
   const totalEpisodes = isAnimeContent
-    ? (animeDetails?.seasons.find(s => s.seasonNumber === season)?.episodes || animeDetails?.episodes || 0)
+    ? (animeDetails?.episodes || 0)
     : (seasonData?.episodes?.length || 0);
   const canPrev = (contentType === "tv" || isAnimeContent) && episode > 1;
   const canNext = (contentType === "tv" || isAnimeContent) && episode < totalEpisodes;
 
-  // Filter channels for anime
-  const availableChannels = isAnimeContent
-    ? CHANNELS.filter((ch) => !ch.disabledForAnime)
-    : CHANNELS;
+  // Use ANIME_CHANNELS for anime, CHANNELS for movie/tv
+  const availableChannels = isAnimeContent ? ANIME_CHANNELS : CHANNELS;
 
   const channel = availableChannels[activeChannel] || availableChannels[0];
   const playerUrl = (!channel.disabled && numericId)
@@ -120,12 +118,18 @@ const PlayerPage = () => {
 
   // Auto-fallback for movie/tv: 7s timeout per channel
   useEffect(() => {
-    if (isAnimeContent || channel.type !== "hls") return;
-    // Fallback handled by HlsPlayer onError
+    if (isAnimeContent) return;
+    if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
+    fallbackTimeoutRef.current = setTimeout(() => {
+      if (playerState === "loading" && activeChannel < availableChannels.length - 1) {
+        toast({ title: `Switching to ${availableChannels[activeChannel + 1].name}...`, description: "Stream unavailable, trying alternative source." });
+        setActiveChannel((prev) => prev + 1);
+      }
+    }, 7000);
     return () => {
       if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
     };
-  }, [activeChannel, isAnimeContent, channel.type]);
+  }, [activeChannel, isAnimeContent, playerState]);
 
   // Dev logging
   useEffect(() => {
@@ -159,11 +163,12 @@ const PlayerPage = () => {
   const handleIframeLoad = useCallback(() => {
     setPlayerState("ready");
     if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+    if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
   }, []);
 
   const goEpisode = (ep: number) => {
     if (isAnimeContent) {
-      navigate(`/player/anime/${numericId}?season=${season}&episode=${ep}`, { replace: true });
+      navigate(`/player/anime/${numericId}?season=1&episode=${ep}`, { replace: true });
     } else {
       navigate(`/player/tv/${numericId}?season=${season}&episode=${ep}`, { replace: true });
     }
@@ -181,11 +186,9 @@ const PlayerPage = () => {
 
   const handleHlsError = useCallback(() => {
     if (isAnimeContent) {
-      // No fallback for anime
       toast({ title: "Stream unavailable", description: "Could not load anime stream. Please try again later." });
       return;
     }
-    // Auto-fallback chain: Ch1 → Ch2 → Ch3
     const nextIndex = activeChannel + 1;
     if (nextIndex < availableChannels.length) {
       toast({ title: `Switching to ${availableChannels[nextIndex].name}...`, description: "Stream unavailable, trying alternative source." });
@@ -253,7 +256,7 @@ const PlayerPage = () => {
           <p className="text-xs text-muted-foreground">
             {displayYear && displayYear}
             {displayRating && displayRating > 0 && ` · ⭐ ${displayRating.toFixed(1)}`}
-            {contentType !== "movie" && ` · S${season} · E${episode}`}
+            {contentType !== "movie" && ` · E${episode}`}
           </p>
         </div>
         {!isHls && (
