@@ -195,6 +195,26 @@ export async function getAnimeDetails(id: number): Promise<AnimeItem> {
   return normalizeMedia(data.Media);
 }
 
+// AniList-native recommendations
+export async function getAnimeRecommendations(id: number): Promise<AnimeItem[]> {
+  const data = await anilistFetch<{ Media: { recommendations: { nodes: { mediaRecommendation: AniListMedia | null }[] } } }>(`
+    query ($id: Int) {
+      Media(id: $id, type: ANIME) {
+        recommendations(perPage: 12, sort: RATING_DESC) {
+          nodes {
+            mediaRecommendation {
+              ${MEDIA_FRAGMENT}
+            }
+          }
+        }
+      }
+    }
+  `, { id });
+  return data.Media.recommendations.nodes
+    .filter((n) => n.mediaRecommendation !== null)
+    .map((n) => normalizeMedia(n.mediaRecommendation!));
+}
+
 // Convert AnimeItem to TMDBMovie-compatible shape for MovieCard/MovieRow
 export function animeToCard(anime: AnimeItem) {
   return {
