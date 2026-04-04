@@ -10,7 +10,7 @@ export interface Channel {
   getUrl: (type: "movie" | "tv" | "anime", tmdbId: number, season?: number, episode?: number, subDub?: "sub" | "dub") => string;
 }
 
-// Movie/TV channels (unchanged)
+// Movie/TV channels
 export const CHANNELS: Channel[] = [
   {
     id: 1,
@@ -65,7 +65,7 @@ export const CHANNELS: Channel[] = [
 export const ANIME_CHANNELS: Channel[] = [
   {
     id: 10,
-    name: "Megaplay",
+    name: "Channel 1",
     label: "Megaplay",
     disabled: false,
     type: "iframe",
@@ -77,7 +77,7 @@ export const ANIME_CHANNELS: Channel[] = [
   },
   {
     id: 11,
-    name: "Cinetaro",
+    name: "Channel 2",
     label: "Cinetaro",
     disabled: false,
     type: "iframe",
