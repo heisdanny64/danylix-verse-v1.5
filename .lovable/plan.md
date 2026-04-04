@@ -1,111 +1,157 @@
 
 
-# Anime Player + TasteDive Recommendations + View All Infinite Scroll Plan
+# Full System Fix, Optimization & Production-Ready Plan
 
 ## Summary
-1. Update anime channels: Megaplay (primary) + Cinetaro (fallback), both iframe
-2. Add TasteDive recommendation system for movie/tv/anime details pages
-3. Add "More Like This" to anime details using AniList recs + TasteDive
-4. Add View All pages for anime rows with infinite scroll
-5. Cinetaro stays iframe (already set)
+Fix Continue Watching (anime support, deduplication, completion tracking), Watchlist (filter bugs, toggle behavior), Homepage (reorder rows, add strict TMDB filtering, deduplication), MovieCard (type labels), and player channel labels. No Simkl integration (no API key available) — TMDB remains discovery source with stricter filtering.
 
-## Changes
+## Architecture
 
-### 1. `src/lib/player.ts` — Update anime channels
+```text
+Data Flow:
+  TMDB → discovery + metadata (movie/tv)
+  AniList → anime discovery + metadata
+  TasteDive → recommendations enrichment only
 
-Replace current channel system for anime:
+Content filter pipeline:
+  TMDB fetch → filterQuality() → deduplicate() → render
+```
 
-- **Channel 1** becomes **Megaplay** (primary for anime):
-  - URL: `https://megaplay.buzz/stream/ani/${anilistId}/${episode}/${subOrDub}`
-  - Season is always 1 (baked in, not passed)
-  - type: `iframe`
-- **Channel 2** becomes **Cinetaro** (fallback for anime):
-  - URL: `https://apicinetaro.falex43350.workers.dev/anime/${id}/1/${episode}/${subOrDub}`
-  - Season hardcoded to 1
-  - type: `iframe`
+---
 
-For movie/tv, channels stay as-is (Cinetaro, VidLink, SuperEmbed).
+## Files to Modify
 
-Implementation: restructure `CHANNELS` so anime has its own channel list, or add a `getAnimeUrl` method. Simplest approach: add a separate `ANIME_CHANNELS` array exported alongside `CHANNELS`.
+### 1. `src/lib/tmdb.ts` — Strict TMDB filtering + new fetch functions
 
-### 2. `src/lib/tastedive.ts` — New file: TasteDive API client
-
-- API key: `1070975-DVerseMo-572562DC` (public, stored in code)
-- `getTasteDiveSuggestions(title: string, type: "movies" | "shows"): Promise<string[]>`
-  - Fetch `https://tastedive.com/api/similar?q=${title}&type=${type}&limit=12&k=...`
-  - Return `data.Similar.Results.map(r => r.Name)`
-- `getMovieTVRecommendations(title: string, type: "movies" | "shows"): Promise<TMDBMovie[]>`
-  - Get TasteDive suggestions → for each, search TMDB → filter out missing posters → limit 12
-- `getAnimeRecommendations(title: string, anilistId: number): Promise<AnimeCard[]>`
-  - Step 1: Fetch AniList recommendations (from `getAnimeDetails` relations or a new query with `recommendations` field)
-  - Step 2: Fetch TasteDive suggestions (type=shows)
-  - Step 3: For each TasteDive result, search AniList; if found, include; if not, discard
-  - Step 4: Merge AniList recs + validated TasteDive results, deduplicate by title, limit 12
-
-### 3. `src/lib/anilist.ts` — Add recommendations query
-
-Add a `getAnimeRecommendations(id: number)` function that queries AniList's `recommendations` field on `Media`:
-```graphql
-recommendations(perPage: 12) {
-  nodes {
-    mediaRecommendation { id title { romaji english } coverImage { large extraLarge } ... }
-  }
+**Add global quality filter function:**
+```ts
+function filterQuality(items: TMDBMovie[]): TMDBMovie[] {
+  return items.filter(i => i.poster_path && (i.vote_count ?? 0) >= 50);
 }
 ```
-Returns `AnimeItem[]`.
 
-### 4. `src/pages/DetailsPage.tsx` — Add "More Like This" sections
+**Update existing fetch functions** to add strict params:
 
-**Movie/TV**: Replace current `getSimilar` with TasteDive pipeline:
-- Query: `useQuery(["recommendations", title, contentType], () => getMovieTVRecommendations(title, type))`
-- Render as `MovieRow` titled "More Like This"
+- `getTrendingMovies()` — new function using `discover/movie` with `vote_count.gte=300`, `vote_average.gte=6`, `primary_release_date.gte=2018-01-01`
+- `getTrendingSeries()` — new function using `discover/tv` with `vote_count.gte=200`, `vote_average.gte=6`, `first_air_date.gte=2018-01-01`
+- `getAnimation()` — strict: `with_genres=16`, `vote_count.gte=200`, `vote_average.gte=6`, `primary_release_date.gte=2015-01-01`
+- `getKidsTeens()` — `with_genres=10762`, `certification_country=US`, `certification.lte=PG-13`, `vote_count.gte=50`
+- `getKoreanDrama()` — add `vote_count.gte=100`
+- `getJapaneseShows()` — `with_original_language=ja`, `without_genres=16`, `vote_count.gte=100`
+- `getBlackStories()` — `with_keywords=urban`, `vote_count.gte=100` (fallback: drama genre with specific keywords)
+- `getAction()` — `with_genres=28,12`, `vote_count.gte=300`
+- `getRomanceDrama()` — `with_genres=10749,18`, `vote_count.gte=200`
+- `getComedy()` — `with_genres=35`, `vote_count.gte=200`
+- `getHorror()` — `with_genres=27`, `vote_count.gte=200`, `vote_average.gte=5.5`
 
-**Anime**: Add "More Like This" section:
-- Query: `useQuery(["anime-recommendations", anime.id, anime.title], () => getAnimeRecommendations(title, id))`
-- Render as `MovieRow` with anime cards
+All functions apply `filterQuality()` before returning. Update `CATEGORY_MAP` accordingly.
 
-**Anime episodes**: Remove seasons dropdown per spec — show flat episode list only.
+### 2. `src/lib/library.ts` — Fix Continue Watching + Watchlist
 
-### 5. `src/pages/PlayerPage.tsx` — Update for Megaplay + Cinetaro anime channels
+**Continue Watching fixes:**
+- `updateProgress`: match by `id + mediaType` (not just `id`) to avoid cross-type collisions
+- Add `markCompleted(id, mediaType)` function that sets `progress: 100` and a `completed` flag
+- `continueWatching` getter: filter out items where `progress >= 100`
+- `removeFromWatchlist`: match by `id + mediaType`
+- `isInWatchlist`: match by `id + mediaType` (add `mediaType` param)
 
-- Import `ANIME_CHANNELS` from player.ts
-- When `contentType === "anime"`: use `ANIME_CHANNELS` instead of `CHANNELS`
-- Channel names display as "Megaplay" and "Cinetaro"
-- Both are iframe type
-- Season always = 1 for anime streaming URLs
-- Sub/dub toggle remains, reloads player on change
-- No auto-fallback for anime (user manually switches)
+**Watchlist fixes:**
+- `addToWatchlist` dedup check: match by `id + mediaType`
+- Add `toggleWatchlist(movie, mediaType)` — adds if not present, removes if present
+- Fix filter: anime filter uses `mediaType === "anime"` (not genre_ids check)
 
-### 6. Anime View All — Infinite scroll pages
+### 3. `src/components/ContinueWatchingRow.tsx` — Support anime
 
-**`src/pages/Index.tsx`**: Add `slug` to anime rows:
-- `slug="trending-anime"` for Trending Anime
-- `slug="popular-anime"` for Popular Anime
+- Add anime link: `item.mediaType === "anime"` → `/player/anime/${id}?season=1&episode=${ep}`
+- Handle anime poster (full URL from `_isAnimeCard` marker, same as MovieCard)
+- Show episode info for anime: `E${item.episode}`
 
-**`src/pages/CategoryPage.tsx`**: Support anime categories:
-- Extend `CategoryConfig` to support `mediaType: "anime"` and `fetchFn` returning anime cards
-- Add to `CATEGORY_MAP` (or a new `ANIME_CATEGORY_MAP` in anilist.ts):
-  - `"trending-anime"`: `{ title: "Trending Anime", mediaType: "anime", fetchFn: (page) => getTrendingAnime(page).then(map(animeToCard)) }`
-  - `"popular-anime"`: same pattern with `getPopularAnime`
-- Replace "Load More" button with **infinite scroll**: use `IntersectionObserver` on a sentinel div at the bottom to auto-load next page
-- Cache previous pages (react-query already handles this with `keepPreviousData`)
+### 4. `src/pages/Index.tsx` — Reorder rows + deduplication
 
-### 7. `src/lib/tmdb.ts` — Update CategoryConfig type
+**New row order** (per Section 4):
+1. Trending Now (all/day)
+2. ~~Picked For You~~ (skip — no user profile system; would be empty)
+3. Continue Watching
+4. Trending Movies (strict filtered)
+5. Trending Series (strict filtered)
+6. Trending Anime
+7. Popular Anime
+8. Animation (strict)
+9. Kids & Teens
+10. Global Hits (popular all)
+11. Korean Drama
+12. Japanese Shows (non-anime)
+13. Black Stories
+14. Action & Adventure
+15. Romance & Drama
+16. Comedy & Feel-Good
+17. Horror
 
-Change `mediaType` in `CategoryConfig` from `"movie" | "tv"` to `"movie" | "tv" | "anime"` to support anime categories.
+**Deduplication:** After Trending Now loads, collect IDs into a Set. Pass to Trending Movies/Series rows and filter those results to exclude already-shown IDs. Implement via a simple `excludeIds` param or post-fetch filter.
+
+Remove old rows: Nollywood, C-Drama, Thai Drama, South African Drama, Upcoming, Top Rated, Hidden Gems, Documentaries, Sci-Fi & Fantasy (replaced by the new consolidated rows).
+
+### 5. `src/components/MovieCard.tsx` — Add type label
+
+Show a small type badge on each card:
+- `MOVIE`, `TV`, `ANIME` label in top-right corner
+- Small semi-transparent pill overlay
+
+### 6. `src/pages/LibraryPage.tsx` — Fix watchlist filter
+
+- Change anime filter from `m.genre_ids?.includes(16) && m.original_language === "ja"` to `m.mediaType === "anime"`
+- Pass correct `mediaType` to MovieCard (currently casts to `"movie" | "tv"`, missing `"anime"`)
+- Implement toggle button behavior: use `toggleWatchlist` from library
+
+### 7. `src/pages/DetailsPage.tsx` — Watchlist toggle behavior + recs limit 20
+
+- Watchlist button: use `toggleWatchlist` — first click adds ("Added"), second click removes ("Add to Library")
+- Show text labels on button instead of just icons
+- Increase TasteDive recommendation limit from 12 to 20
+- Add failsafe: if TasteDive returns empty, fall back to TMDB `getSimilar()` for movie/tv or AniList recs for anime
+
+### 8. `src/pages/PlayerPage.tsx` — Anime progress saving + channel labels
+
+- Save anime progress to Continue Watching (currently only saves movie/tv)
+- Channel labels: anime channels display as "Channel 1" and "Channel 2" (not "Megaplay" / "Cinetaro")
+- Change `ANIME_CHANNELS[0].name` to "Channel 1" and `ANIME_CHANNELS[1].name` to "Channel 2"
+
+### 9. `src/lib/player.ts` — Update anime channel names
+
+- `ANIME_CHANNELS[0].name = "Channel 1"`
+- `ANIME_CHANNELS[1].name = "Channel 2"`
+
+### 10. `src/lib/tastedive.ts` — Increase limit to 20
+
+- Change `limit=12` to `limit=20` in URL
+- Change result caps from 12 to 20
+
+---
+
+## Key Bug Fixes
+
+| Bug | File | Fix |
+|-----|------|-----|
+| Anime missing from Continue Watching | PlayerPage, ContinueWatchingRow | Save anime progress; handle anime links |
+| Watchlist anime filter broken | LibraryPage | Use `mediaType === "anime"` not genre check |
+| Watchlist button not toggling | DetailsPage, library.ts | Add `toggleWatchlist`, show text state |
+| No type label on cards | MovieCard | Add type badge overlay |
+| No quality filtering on TMDB | tmdb.ts | Add `vote_count.gte`, `vote_average.gte` params |
+| Duplicate content across rows | Index.tsx | ID-based dedup between Trending Now and Movies/Series |
+| Channel labels wrong for anime | player.ts | Change names to "Channel 1"/"Channel 2" |
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/lib/player.ts` | Add `ANIME_CHANNELS` array (Megaplay + Cinetaro for anime) |
-| `src/lib/tastedive.ts` | **Create** — TasteDive API + enrichment pipelines |
-| `src/lib/anilist.ts` | Add `getAnimeRecommendations()` with recommendations query |
-| `src/pages/DetailsPage.tsx` | Replace "More Like This" with TasteDive pipeline; add anime recs; flatten anime episodes |
-| `src/pages/PlayerPage.tsx` | Use `ANIME_CHANNELS` for anime; season=1 always |
-| `src/pages/CategoryPage.tsx` | Replace Load More button with infinite scroll via IntersectionObserver |
-| `src/lib/tmdb.ts` | Add anime entries to `CATEGORY_MAP`; widen `CategoryConfig.mediaType` |
-| `src/pages/Index.tsx` | Add `slug` props to anime rows |
-
-No changes to: App.tsx, BottomNav, MovieCard, MovieRow, SearchPage, library.ts, or HlsPlayer.
+| `src/lib/tmdb.ts` | Add strict filter functions, quality filter, new categories |
+| `src/lib/library.ts` | Fix dedup by id+type, add toggleWatchlist, markCompleted, filter completed |
+| `src/lib/player.ts` | Rename anime channel names |
+| `src/lib/tastedive.ts` | Increase limit to 20 |
+| `src/components/ContinueWatchingRow.tsx` | Support anime type |
+| `src/components/MovieCard.tsx` | Add type label badge |
+| `src/pages/Index.tsx` | Reorder rows, new fetch calls, dedup |
+| `src/pages/DetailsPage.tsx` | Watchlist toggle, recs failsafe, limit 20 |
+| `src/pages/PlayerPage.tsx` | Save anime progress |
+| `src/pages/LibraryPage.tsx` | Fix anime filter, toggle button |
 
