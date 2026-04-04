@@ -15,17 +15,26 @@ const ContinueWatchingRow = () => {
       <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
         {continueWatching.map((item: ContinueWatchingItem) => {
           const { title } = getDisplayInfo(item.movie);
+          const isAnimeItem = item.mediaType === "anime";
           const link =
-            item.mediaType === "tv"
-              ? `/player/tv/${item.movie.id}?season=${item.season || 1}&episode=${item.episode || 1}`
-              : `/player/movie/${item.movie.id}`;
+            isAnimeItem
+              ? `/player/anime/${item.movie.id}?season=1&episode=${item.episode || 1}`
+              : item.mediaType === "tv"
+                ? `/player/tv/${item.movie.id}?season=${item.season || 1}&episode=${item.episode || 1}`
+                : `/player/movie/${item.movie.id}`;
+
+          // Anime cards use full URL poster_path
+          const isAnimeCard = (item.movie as any)._isAnimeCard === true;
+          const imgSrc = isAnimeCard
+            ? item.movie.poster_path || "/placeholder.svg"
+            : posterUrl(item.movie.backdrop_path || item.movie.poster_path, "w300");
 
           return (
-            <Link key={item.movie.id} to={link} className="flex-shrink-0 w-[160px] group">
+            <Link key={`${item.movie.id}-${item.mediaType}`} to={link} className="flex-shrink-0 w-[160px] group">
               <div className="relative rounded-lg overflow-hidden bg-muted">
                 <div className="aspect-video">
                   <img
-                    src={posterUrl(item.movie.backdrop_path || item.movie.poster_path, "w300")}
+                    src={imgSrc}
                     alt={title}
                     className="w-full h-full object-cover"
                   />
@@ -36,8 +45,10 @@ const ContinueWatchingRow = () => {
                 <Progress value={item.progress} className="absolute bottom-0 left-0 right-0 h-1 rounded-none" />
               </div>
               <p className="text-xs font-medium text-foreground mt-1.5 truncate">{title}</p>
-              {item.mediaType === "tv" && item.season && item.episode && (
-                <p className="text-xs text-muted-foreground">S{item.season} E{item.episode}</p>
+              {(item.mediaType === "tv" || item.mediaType === "anime") && item.episode && (
+                <p className="text-xs text-muted-foreground">
+                  {item.mediaType === "tv" && item.season ? `S${item.season} ` : ""}E{item.episode}
+                </p>
               )}
             </Link>
           );

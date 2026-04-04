@@ -19,10 +19,11 @@ const MovieCard = ({ movie, mediaType, compact }: MovieCardProps) => {
         ? `/details/tv/${movie.id}`
         : `/details/movie/${movie.id}`;
 
-  // For anime cards, poster_path is a full URL
   const posterSrc = isAnimeCard
     ? movie.poster_path || "/placeholder.svg"
     : posterUrl(movie.poster_path);
+
+  const typeLabel = type === "anime" ? "ANIME" : type === "tv" ? "TV" : "MOVIE";
 
   return (
     <Link
@@ -39,6 +40,10 @@ const MovieCard = ({ movie, mediaType, compact }: MovieCardProps) => {
             loading="lazy"
           />
         </div>
+        {/* Type badge */}
+        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-background/70 text-foreground backdrop-blur-sm leading-none">
+          {typeLabel}
+        </span>
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 via-background/60 to-transparent p-3 pt-8">
           <h3 className="text-sm font-semibold text-foreground leading-tight line-clamp-2">
             {title}

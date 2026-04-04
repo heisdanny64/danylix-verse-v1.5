@@ -63,15 +63,12 @@ const PlayerPage = () => {
   const canPrev = (contentType === "tv" || isAnimeContent) && episode > 1;
   const canNext = (contentType === "tv" || isAnimeContent) && episode < totalEpisodes;
 
-  // Use ANIME_CHANNELS for anime, CHANNELS for movie/tv
   const availableChannels = isAnimeContent ? ANIME_CHANNELS : CHANNELS;
-
   const channel = availableChannels[activeChannel] || availableChannels[0];
   const playerUrl = (!channel.disabled && numericId)
     ? channel.getUrl(contentType, numericId, season, episode, subDub)
     : "";
 
-  // Display info
   const displayTitle = isAnimeContent
     ? animeDetails?.title || "Loading..."
     : tmdbDetails ? getDisplayInfo(tmdbDetails as any).title : "Loading...";
@@ -82,7 +79,7 @@ const PlayerPage = () => {
     ? animeDetails?.rating
     : tmdbDetails?.vote_average;
 
-  // Save progress on mount
+  // Save progress for movie/tv
   useEffect(() => {
     if (!isAnimeContent && tmdbDetails) {
       const movie = {
@@ -103,7 +100,26 @@ const PlayerPage = () => {
     }
   }, [tmdbDetails, contentType, season, episode]);
 
-  // Reset state when channel or URL changes (iframe only)
+  // Save progress for anime
+  useEffect(() => {
+    if (isAnimeContent && animeDetails) {
+      const movie = {
+        id: animeDetails.id,
+        title: animeDetails.title,
+        overview: animeDetails.description,
+        poster_path: animeDetails.poster,
+        backdrop_path: animeDetails.banner,
+        vote_average: animeDetails.rating,
+        release_date: animeDetails.year ? `${animeDetails.year}-01-01` : "",
+        genre_ids: [],
+        media_type: "anime",
+        _isAnimeCard: true,
+      };
+      updateProgress(movie as any, "anime", 10, 1, episode);
+    }
+  }, [animeDetails, episode]);
+
+  // Reset state when channel or URL changes
   useEffect(() => {
     if (channel.type === "iframe") {
       setShieldActive(true);
@@ -116,7 +132,7 @@ const PlayerPage = () => {
     return () => { if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current); };
   }, [playerUrl, activeChannel, channel.type]);
 
-  // Auto-fallback for movie/tv: 7s timeout per channel
+  // Auto-fallback for movie/tv only
   useEffect(() => {
     if (isAnimeContent) return;
     if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
@@ -131,7 +147,6 @@ const PlayerPage = () => {
     };
   }, [activeChannel, isAnimeContent, playerState]);
 
-  // Dev logging
   useEffect(() => {
     if (import.meta.env.DEV && playerUrl) {
       console.log("[Player Debug]", {
@@ -147,7 +162,6 @@ const PlayerPage = () => {
     }
   }, [playerUrl, activeChannel]);
 
-  // Fullscreen change listener
   useEffect(() => {
     const handler = () => {
       const fs = !!document.fullscreenElement;
@@ -243,7 +257,6 @@ const PlayerPage = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top bar */}
       <div className="flex items-center gap-3 px-4 py-3 bg-card/80 backdrop-blur-sm">
         <button
           onClick={() => navigate(-1)}
@@ -269,7 +282,6 @@ const PlayerPage = () => {
         )}
       </div>
 
-      {/* Channel switcher + Sub/Dub toggle */}
       <div className="flex gap-2 px-4 py-2 overflow-x-auto items-center">
         {availableChannels.map((ch, i) => (
           <button
@@ -287,7 +299,6 @@ const PlayerPage = () => {
           </button>
         ))}
 
-        {/* Sub/Dub toggle — anime only */}
         {isAnimeContent && (
           <div className="flex items-center gap-2 ml-auto">
             <span className={`text-xs font-medium ${subDub === "sub" ? "text-primary" : "text-muted-foreground"}`}>Sub</span>
@@ -300,7 +311,6 @@ const PlayerPage = () => {
         )}
       </div>
 
-      {/* Player container */}
       <div className="flex justify-center px-4 py-2">
         <div className="w-full max-w-[1100px]">
           <div
@@ -309,7 +319,6 @@ const PlayerPage = () => {
               isFullscreen ? "fixed inset-0 z-50 rounded-none" : "aspect-video rounded-2xl"
             }`}
           >
-            {/* HLS Player */}
             {isHls && playerUrl && (
               <HlsPlayer
                 src={playerUrl}
@@ -320,7 +329,6 @@ const PlayerPage = () => {
               />
             )}
 
-            {/* Iframe Player */}
             {isIframe && playerUrl && activeChannel >= 0 && (
               <>
                 <iframe
@@ -334,7 +342,6 @@ const PlayerPage = () => {
                   referrerPolicy="origin-when-cross-origin"
                 />
 
-                {/* Shield overlay */}
                 {shieldActive && (
                   <div
                     className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer"
@@ -359,7 +366,6 @@ const PlayerPage = () => {
                   </div>
                 )}
 
-                {/* Re-shield button */}
                 {!shieldActive && (
                   <button
                     onClick={() => setShieldActive(true)}
@@ -370,7 +376,6 @@ const PlayerPage = () => {
                   </button>
                 )}
 
-                {/* Fullscreen button overlay */}
                 <button
                   onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
                   className="absolute bottom-3 right-3 z-20 w-10 h-10 rounded-full bg-background/70 backdrop-blur-sm flex items-center justify-center text-foreground hover:bg-background/90 transition-colors"
@@ -380,7 +385,6 @@ const PlayerPage = () => {
               </>
             )}
 
-            {/* No URL state */}
             {!playerUrl && (
               <div className="flex items-center justify-center h-full">
                 <p className="text-muted-foreground text-sm">Select a channel to start playback</p>
@@ -388,7 +392,6 @@ const PlayerPage = () => {
             )}
           </div>
 
-          {/* Error state (iframe only) */}
           {isIframe && playerState === "error" && (
             <div className="mt-4 p-4 rounded-xl bg-card border border-border text-center space-y-3">
               <p className="text-sm font-medium text-foreground">Source unavailable — {channel.name}</p>
@@ -403,7 +406,6 @@ const PlayerPage = () => {
         </div>
       </div>
 
-      {/* Episode navigation */}
       {contentType !== "movie" && (
         <div className="flex items-center justify-between px-4 py-3 max-w-[1100px] mx-auto">
           <Button variant="outline" size="sm" disabled={!canPrev} onClick={() => goEpisode(episode - 1)} className="gap-1">

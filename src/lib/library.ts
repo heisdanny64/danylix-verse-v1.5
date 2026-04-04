@@ -11,6 +11,7 @@ export interface ContinueWatchingItem {
   season?: number;
   episode?: number;
   updatedAt: number;
+  lastChannel?: number;
 }
 
 function loadJSON<T>(key: string, fallback: T): T {
@@ -39,24 +40,37 @@ export function useLibrary() {
 
   const addToWatchlist = useCallback((movie: TMDBMovie, mediaType: "movie" | "tv" | "anime" = "movie") => {
     setWatchlist((prev) => {
-      if (prev.some((m) => m.id === movie.id)) return prev;
+      if (prev.some((m) => m.id === movie.id && m.mediaType === mediaType)) return prev;
       return [{ ...movie, mediaType }, ...prev];
     });
   }, []);
 
-  const removeFromWatchlist = useCallback((id: number) => {
-    setWatchlist((prev) => prev.filter((m) => m.id !== id));
+  const removeFromWatchlist = useCallback((id: number, mediaType?: string) => {
+    setWatchlist((prev) => prev.filter((m) => !(m.id === id && (!mediaType || m.mediaType === mediaType))));
   }, []);
 
   const isInWatchlist = useCallback(
-    (id: number) => watchlist.some((m) => m.id === id),
+    (id: number, mediaType?: string) => watchlist.some((m) => m.id === id && (!mediaType || m.mediaType === mediaType)),
     [watchlist]
   );
+
+  const toggleWatchlist = useCallback((movie: TMDBMovie, mediaType: "movie" | "tv" | "anime" = "movie") => {
+    if (isInWatchlist(movie.id, mediaType)) {
+      removeFromWatchlist(movie.id, mediaType);
+      return false;
+    } else {
+      addToWatchlist(movie, mediaType);
+      return true;
+    }
+  }, [isInWatchlist, removeFromWatchlist, addToWatchlist]);
 
   const updateProgress = useCallback(
     (movie: TMDBMovie, mediaType: "movie" | "tv" | "anime", progress: number, season?: number, episode?: number) => {
       setContinueWatching((prev) => {
-        const filtered = prev.filter((item) => item.movie.id !== movie.id);
+        // Match by id + mediaType to avoid cross-type collisions
+        const filtered = prev.filter((item) => !(item.movie.id === movie.id && item.mediaType === mediaType));
+        // Don't add completed items
+        if (progress >= 100) return filtered;
         return [
           { movie, mediaType, progress, season, episode, updatedAt: Date.now() },
           ...filtered,
@@ -66,16 +80,20 @@ export function useLibrary() {
     []
   );
 
-  const removeFromContinue = useCallback((id: number) => {
-    setContinueWatching((prev) => prev.filter((item) => item.movie.id !== id));
+  const removeFromContinue = useCallback((id: number, mediaType?: string) => {
+    setContinueWatching((prev) => prev.filter((item) => !(item.movie.id === id && (!mediaType || item.mediaType === mediaType))));
   }, []);
+
+  // Filter out completed items from the getter
+  const activeContinueWatching = continueWatching.filter(item => item.progress < 100);
 
   return {
     watchlist,
-    continueWatching,
+    continueWatching: activeContinueWatching,
     addToWatchlist,
     removeFromWatchlist,
     isInWatchlist,
+    toggleWatchlist,
     updateProgress,
     removeFromContinue,
   };

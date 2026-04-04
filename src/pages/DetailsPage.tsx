@@ -2,7 +2,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, Plus, Play, Check, Download } from "lucide-react";
 import { getMovieDetails, backdropUrl, getDisplayInfo, type TMDBEpisode } from "@/lib/tmdb";
-import { getAnimeDetails, getAnimeRecommendations, animeToCard, type AnimeItem } from "@/lib/anilist";
+import { getAnimeDetails, animeToCard, type AnimeItem } from "@/lib/anilist";
 import { getMovieTVRecommendations, getAnimeRecommendationsFromTasteDive } from "@/lib/tastedive";
 import { useLibrary } from "@/lib/library";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ const DetailsPage = () => {
   const { type, id } = useParams<{ type: string; id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { addToWatchlist, isInWatchlist } = useLibrary();
+  const { toggleWatchlist, isInWatchlist } = useLibrary();
 
   const contentType = (type as "movie" | "tv" | "anime") || "movie";
   const numericId = Number(id);
@@ -29,11 +29,11 @@ const DetailsPage = () => {
     enabled: contentType !== "anime" && !!numericId,
   });
 
-  // Movie/TV recommendations via TasteDive → TMDB
+  // Movie/TV recommendations via TasteDive → TMDB (with failsafe)
   const tmdbTitle = tmdbDetail ? getDisplayInfo(tmdbDetail as any).title : "";
   const { data: movieTvRecs } = useQuery({
-    queryKey: ["tastedive-recs", contentType, tmdbTitle],
-    queryFn: () => getMovieTVRecommendations(tmdbTitle, contentType as "movie" | "tv"),
+    queryKey: ["tastedive-recs", contentType, tmdbTitle, numericId],
+    queryFn: () => getMovieTVRecommendations(tmdbTitle, contentType as "movie" | "tv", numericId),
     enabled: contentType !== "anime" && !!tmdbTitle,
   });
 
@@ -60,10 +60,9 @@ const DetailsPage = () => {
   }
 
   if (contentType === "anime") {
-    return <AnimeDetailsView anime={animeDetail!} navigate={navigate} toast={toast} addToWatchlist={addToWatchlist} isInWatchlist={isInWatchlist} />;
+    return <AnimeDetailsView anime={animeDetail!} navigate={navigate} toast={toast} toggleWatchlist={toggleWatchlist} isInWatchlist={isInWatchlist} />;
   }
 
-  // Movie or TV
   const detail = tmdbDetail;
   if (!detail) {
     return (
@@ -74,11 +73,28 @@ const DetailsPage = () => {
   }
 
   const { title, year } = getDisplayInfo(detail as any);
-  const inWatchlist = isInWatchlist(detail.id);
+  const inWatchlist = isInWatchlist(detail.id, contentType);
   const seasons = contentType === "tv" ? detail.seasons?.filter((s) => s.season_number > 0) || [] : [];
 
   const handlePlayEpisode = (ep: TMDBEpisode) => {
     navigate(`/player/tv/${numericId}?season=${ep.season_number}&episode=${ep.episode_number}`);
+  };
+
+  const handleToggleWatchlist = () => {
+    const m = {
+      id: detail.id,
+      title: detail.title,
+      name: detail.name,
+      overview: detail.overview,
+      poster_path: detail.poster_path,
+      backdrop_path: detail.backdrop_path,
+      vote_average: detail.vote_average,
+      release_date: detail.release_date,
+      first_air_date: detail.first_air_date,
+      genre_ids: detail.genres.map((g) => g.id),
+    } as any;
+    const added = toggleWatchlist(m, contentType as "movie" | "tv");
+    toast({ title: added ? "Added to Library" : "Removed from Library" });
   };
 
   return (
@@ -138,23 +154,10 @@ const DetailsPage = () => {
           <Button
             variant="outline"
             className="gap-1.5"
-            onClick={() => {
-              const m = {
-                id: detail.id,
-                title: detail.title,
-                name: detail.name,
-                overview: detail.overview,
-                poster_path: detail.poster_path,
-                backdrop_path: detail.backdrop_path,
-                vote_average: detail.vote_average,
-                release_date: detail.release_date,
-                first_air_date: detail.first_air_date,
-                genre_ids: detail.genres.map((g) => g.id),
-              } as any;
-              addToWatchlist(m, contentType as "movie" | "tv");
-            }}
+            onClick={handleToggleWatchlist}
           >
             {inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {inWatchlist ? "Added" : "Add to Library"}
           </Button>
           <Button
             variant="outline"
@@ -165,7 +168,6 @@ const DetailsPage = () => {
           </Button>
         </div>
 
-        {/* TV Seasons */}
         {contentType === "tv" && seasons.length > 0 && (
           <div className="pt-2">
             <h2 className="text-lg font-bold text-foreground mb-2">Seasons & Episodes</h2>
@@ -185,7 +187,6 @@ const DetailsPage = () => {
         )}
       </div>
 
-      {/* More Like This — TasteDive powered */}
       {movieTvRecs && movieTvRecs.length > 0 && (
         <div className="mt-8">
           <MovieRow title="More Like This" movies={movieTvRecs} mediaType={contentType as "movie" | "tv"} />
@@ -200,11 +201,11 @@ interface AnimeDetailsViewProps {
   anime: AnimeItem;
   navigate: ReturnType<typeof useNavigate>;
   toast: ReturnType<typeof useToast>["toast"];
-  addToWatchlist: any;
-  isInWatchlist: (id: number) => boolean;
+  toggleWatchlist: any;
+  isInWatchlist: (id: number, mediaType?: string) => boolean;
 }
 
-const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlist }: AnimeDetailsViewProps) => {
+const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchlist }: AnimeDetailsViewProps) => {
   if (!anime) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -213,37 +214,32 @@ const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlis
     );
   }
 
-  const inWatchlist = isInWatchlist(anime.id);
+  const inWatchlist = isInWatchlist(anime.id, "anime");
 
-  // AniList native recs + TasteDive validated recs, merged
   const { data: animeRecs } = useQuery({
     queryKey: ["anime-recs-merged", anime.id, anime.title],
-    queryFn: async () => {
-      const [anilistRecs, tasteDiveRecs] = await Promise.allSettled([
-        getAnimeRecommendations(anime.id),
-        getAnimeRecommendationsFromTasteDive(anime.title),
-      ]);
-
-      const anilistCards = anilistRecs.status === "fulfilled" ? anilistRecs.value.map(animeToCard) : [];
-      const tdCards = tasteDiveRecs.status === "fulfilled" ? tasteDiveRecs.value : [];
-
-      // Merge and deduplicate by id
-      const seen = new Set<number>();
-      const merged = [];
-      for (const card of [...anilistCards, ...tdCards]) {
-        if (!seen.has(card.id)) {
-          seen.add(card.id);
-          merged.push(card);
-        }
-        if (merged.length >= 12) break;
-      }
-      // Remove self
-      return merged.filter((c) => c.id !== anime.id);
-    },
+    queryFn: () => getAnimeRecommendationsFromTasteDive(anime.title, anime.id),
   });
 
   const handlePlayEpisode = (_season: number, episode: number) => {
     navigate(`/player/anime/${anime.id}?season=1&episode=${episode}`);
+  };
+
+  const handleToggleWatchlist = () => {
+    const m = {
+      id: anime.id,
+      title: anime.title,
+      overview: anime.description,
+      poster_path: anime.poster,
+      backdrop_path: anime.banner,
+      vote_average: anime.rating,
+      release_date: anime.year ? `${anime.year}-01-01` : "",
+      genre_ids: [],
+      media_type: "anime",
+      _isAnimeCard: true,
+    } as any;
+    const added = toggleWatchlist(m, "anime");
+    toast({ title: added ? "Added to Library" : "Removed from Library" });
   };
 
   return (
@@ -297,23 +293,10 @@ const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlis
           <Button
             variant="outline"
             className="gap-1.5"
-            onClick={() => {
-              const m = {
-                id: anime.id,
-                title: anime.title,
-                overview: anime.description,
-                poster_path: anime.poster,
-                backdrop_path: anime.banner,
-                vote_average: anime.rating,
-                release_date: anime.year ? `${anime.year}-01-01` : "",
-                genre_ids: [],
-                media_type: "anime",
-                _isAnimeCard: true,
-              } as any;
-              addToWatchlist(m, "anime");
-            }}
+            onClick={handleToggleWatchlist}
           >
             {inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {inWatchlist ? "Added" : "Add to Library"}
           </Button>
           <Button
             variant="outline"
@@ -324,7 +307,6 @@ const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlis
           </Button>
         </div>
 
-        {/* Episodes — flat list only, no seasons dropdown */}
         <div className="pt-2">
           <h2 className="text-lg font-bold text-foreground mb-2">Episodes</h2>
           <AnimeEpisodeList
@@ -336,7 +318,6 @@ const AnimeDetailsView = ({ anime, navigate, toast, addToWatchlist, isInWatchlis
         </div>
       </div>
 
-      {/* More Like This */}
       {animeRecs && animeRecs.length > 0 && (
         <div className="mt-8">
           <MovieRow title="More Like This" movies={animeRecs} mediaType="anime" />
