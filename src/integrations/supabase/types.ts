@@ -14,13 +14,147 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      continue_watching: {
+        Row: {
+          content_id: string
+          content_type: string
+          episode: number | null
+          id: string
+          last_channel: number | null
+          poster: string | null
+          progress: number
+          season: number | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content_id: string
+          content_type: string
+          episode?: number | null
+          id?: string
+          last_channel?: number | null
+          poster?: string | null
+          progress?: number
+          season?: number | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content_id?: string
+          content_type?: string
+          episode?: number | null
+          id?: string
+          last_channel?: number | null
+          poster?: string | null
+          progress?: number
+          season?: number | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      downloads: {
+        Row: {
+          content_id: string
+          content_type: string
+          created_at: string
+          file_url: string | null
+          id: string
+          poster: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          content_id: string
+          content_type: string
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          poster?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          content_id?: string
+          content_type?: string
+          created_at?: string
+          file_url?: string | null
+          id?: string
+          poster?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          id: string
+          name: string
+          username: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          id: string
+          name: string
+          username: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          username?: string
+        }
+        Relationships: []
+      }
+      watchlist: {
+        Row: {
+          added_at: string
+          content_id: string
+          content_type: string
+          id: string
+          poster: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          added_at?: string
+          content_id: string
+          content_type: string
+          id?: string
+          poster?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          added_at?: string
+          content_id?: string
+          content_type?: string
+          id?: string
+          poster?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_email_by_username: {
+        Args: { lookup_username: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
