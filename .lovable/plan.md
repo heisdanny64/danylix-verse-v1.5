@@ -1,157 +1,169 @@
 
 
-# Full System Fix, Optimization & Production-Ready Plan
+# D.Verse Full Backend Integration Plan
 
-## Summary
-Fix Continue Watching (anime support, deduplication, completion tracking), Watchlist (filter bugs, toggle behavior), Homepage (reorder rows, add strict TMDB filtering, deduplication), MovieCard (type labels), and player channel labels. No Simkl integration (no API key available) — TMDB remains discovery source with stricter filtering.
+## Overview
+Add Supabase-backed authentication, user profiles, cloud-persisted watchlist/continue-watching/downloads, a profile page with settings, and wire the existing localStorage-based library to sync with Supabase when logged in. The app works without login (localStorage fallback) but syncs to cloud when authenticated.
 
-## Architecture
+## Database Schema (1 migration)
 
-```text
-Data Flow:
-  TMDB → discovery + metadata (movie/tv)
-  AniList → anime discovery + metadata
-  TasteDive → recommendations enrichment only
+### Tables
 
-Content filter pipeline:
-  TMDB fetch → filterQuality() → deduplicate() → render
-```
+**profiles**
+- `id` uuid PK → references `auth.users(id)` ON DELETE CASCADE
+- `name` text NOT NULL
+- `username` text UNIQUE NOT NULL
+- `email` text NOT NULL
+- `avatar_url` text NULL
+- `created_at` timestamptz DEFAULT now()
+
+**watchlist**
+- `id` uuid PK DEFAULT gen_random_uuid()
+- `user_id` uuid NOT NULL → references `auth.users(id)` ON DELETE CASCADE
+- `content_id` text NOT NULL (string to handle both TMDB and AniList IDs)
+- `content_type` text NOT NULL CHECK (content_type IN ('movie','tv','anime'))
+- `title` text NOT NULL
+- `poster` text
+- `added_at` timestamptz DEFAULT now()
+- UNIQUE(user_id, content_id, content_type)
+
+**continue_watching**
+- `id` uuid PK DEFAULT gen_random_uuid()
+- `user_id` uuid NOT NULL → references `auth.users(id)` ON DELETE CASCADE
+- `content_id` text NOT NULL
+- `content_type` text NOT NULL CHECK (content_type IN ('movie','tv','anime'))
+- `title` text NOT NULL
+- `poster` text
+- `season` int
+- `episode` int
+- `progress` real NOT NULL DEFAULT 0 (0-100)
+- `last_channel` int
+- `updated_at` timestamptz DEFAULT now()
+- UNIQUE(user_id, content_id, content_type)
+
+**downloads**
+- `id` uuid PK DEFAULT gen_random_uuid()
+- `user_id` uuid NOT NULL → references `auth.users(id)` ON DELETE CASCADE
+- `content_id` text NOT NULL
+- `content_type` text NOT NULL
+- `title` text NOT NULL
+- `poster` text
+- `file_url` text
+- `created_at` timestamptz DEFAULT now()
+
+### RLS Policies
+All tables: enable RLS. Users can SELECT/INSERT/UPDATE/DELETE only their own rows (`auth.uid() = user_id`). Profiles: users can SELECT/UPDATE own row only.
+
+### Trigger
+`handle_new_user` trigger on `auth.users` AFTER INSERT: auto-creates a profile row using `raw_user_meta_data->>'name'`, `raw_user_meta_data->>'username'`, and `email`.
+
+### Function for username lookup
+`get_email_by_username(username text)` — SECURITY DEFINER function that returns the email for a given username, used for login-by-username flow.
+
+---
+
+## Files to Create
+
+### 1. `src/contexts/AuthContext.tsx` — Auth provider
+- Wraps app with auth state via `onAuthStateChange` + `getSession`
+- Exports `useAuth()` hook: `{ user, profile, loading, signUp, signIn, signOut, updateProfile, updatePassword }`
+- `signUp(name, username, email, password)`: calls `supabase.auth.signUp` with metadata `{ name, username }`
+- `signIn(identifier, password)`: if identifier contains `@`, sign in directly; otherwise call `get_email_by_username` RPC to resolve email first
+- Fetches profile from `profiles` table after auth state change
+
+### 2. `src/pages/AuthPage.tsx` — Login / Sign Up page
+- Tab-based UI: Login | Sign Up
+- Login: email-or-username + password fields
+- Sign Up: name, username, email, password, confirm password
+- Client-side validation (username format, password match, min length)
+- Redirects to `/` on success
+
+### 3. `src/pages/ProfilePage.tsx` — User profile page
+- Shows: name, username, email
+- "Edit Profile" button → inline edit or modal for name/username
+- "Change Password" section: old password (not needed for Supabase — just new + confirm)
+- Downloads preview row (horizontal scroll, links to `/downloads`)
+- About / Privacy / Terms links (placeholder pages or modals)
+- Sign Out button
+
+### 4. `src/pages/DownloadsPage.tsx` — Full downloads list
+- Grid of downloaded content cards
+- Fetches from `downloads` table
+- Empty state if none
+
+### 5. `src/lib/supabase-library.ts` — Cloud-synced library functions
+- `syncWatchlist(userId)`: fetch user's watchlist from Supabase
+- `addToCloudWatchlist(userId, item)`: upsert into watchlist table
+- `removeFromCloudWatchlist(userId, contentId, contentType)`: delete
+- `syncContinueWatching(userId)`: fetch from continue_watching
+- `updateCloudProgress(userId, item)`: upsert; if progress >= 95, delete instead
+- All functions handle errors gracefully and fall back to localStorage
 
 ---
 
 ## Files to Modify
 
-### 1. `src/lib/tmdb.ts` — Strict TMDB filtering + new fetch functions
+### 6. `src/App.tsx` — Add auth provider + new routes
+- Wrap with `<AuthProvider>`
+- Add routes: `/auth`, `/profile`, `/downloads`
+- Add protected route wrapper (redirect to `/auth` if not logged in for profile/downloads)
 
-**Add global quality filter function:**
-```ts
-function filterQuality(items: TMDBMovie[]): TMDBMovie[] {
-  return items.filter(i => i.poster_path && (i.vote_count ?? 0) >= 50);
-}
-```
+### 7. `src/components/BottomNav.tsx` — Add Profile tab
+- Add Profile icon/tab (User icon) → `/profile`
+- Show only when logged in; show "Sign In" link when not
 
-**Update existing fetch functions** to add strict params:
+### 8. `src/lib/library.ts` — Hybrid localStorage + Supabase sync
+- Accept optional `userId` parameter
+- When user is logged in: read/write to Supabase, cache locally
+- When logged out: localStorage only (current behavior)
+- On login: merge localStorage data into Supabase (one-time sync)
 
-- `getTrendingMovies()` — new function using `discover/movie` with `vote_count.gte=300`, `vote_average.gte=6`, `primary_release_date.gte=2018-01-01`
-- `getTrendingSeries()` — new function using `discover/tv` with `vote_count.gte=200`, `vote_average.gte=6`, `first_air_date.gte=2018-01-01`
-- `getAnimation()` — strict: `with_genres=16`, `vote_count.gte=200`, `vote_average.gte=6`, `primary_release_date.gte=2015-01-01`
-- `getKidsTeens()` — `with_genres=10762`, `certification_country=US`, `certification.lte=PG-13`, `vote_count.gte=50`
-- `getKoreanDrama()` — add `vote_count.gte=100`
-- `getJapaneseShows()` — `with_original_language=ja`, `without_genres=16`, `vote_count.gte=100`
-- `getBlackStories()` — `with_keywords=urban`, `vote_count.gte=100` (fallback: drama genre with specific keywords)
-- `getAction()` — `with_genres=28,12`, `vote_count.gte=300`
-- `getRomanceDrama()` — `with_genres=10749,18`, `vote_count.gte=200`
-- `getComedy()` — `with_genres=35`, `vote_count.gte=200`
-- `getHorror()` — `with_genres=27`, `vote_count.gte=200`, `vote_average.gte=5.5`
+### 9. `src/pages/DetailsPage.tsx` — Wire cloud watchlist
+- Use auth context to determine if cloud or local
+- Watchlist toggle calls cloud functions when logged in
 
-All functions apply `filterQuality()` before returning. Update `CATEGORY_MAP` accordingly.
+### 10. `src/pages/PlayerPage.tsx` — Wire cloud continue-watching
+- Save progress to Supabase when logged in
+- Remove from continue_watching when progress >= 95%
 
-### 2. `src/lib/library.ts` — Fix Continue Watching + Watchlist
+### 11. `src/pages/LibraryPage.tsx` — Fetch from Supabase when logged in
+- Use cloud watchlist data when authenticated
+- Keep localStorage fallback for anonymous users
 
-**Continue Watching fixes:**
-- `updateProgress`: match by `id + mediaType` (not just `id`) to avoid cross-type collisions
-- Add `markCompleted(id, mediaType)` function that sets `progress: 100` and a `completed` flag
-- `continueWatching` getter: filter out items where `progress >= 100`
-- `removeFromWatchlist`: match by `id + mediaType`
-- `isInWatchlist`: match by `id + mediaType` (add `mediaType` param)
-
-**Watchlist fixes:**
-- `addToWatchlist` dedup check: match by `id + mediaType`
-- Add `toggleWatchlist(movie, mediaType)` — adds if not present, removes if present
-- Fix filter: anime filter uses `mediaType === "anime"` (not genre_ids check)
-
-### 3. `src/components/ContinueWatchingRow.tsx` — Support anime
-
-- Add anime link: `item.mediaType === "anime"` → `/player/anime/${id}?season=1&episode=${ep}`
-- Handle anime poster (full URL from `_isAnimeCard` marker, same as MovieCard)
-- Show episode info for anime: `E${item.episode}`
-
-### 4. `src/pages/Index.tsx` — Reorder rows + deduplication
-
-**New row order** (per Section 4):
-1. Trending Now (all/day)
-2. ~~Picked For You~~ (skip — no user profile system; would be empty)
-3. Continue Watching
-4. Trending Movies (strict filtered)
-5. Trending Series (strict filtered)
-6. Trending Anime
-7. Popular Anime
-8. Animation (strict)
-9. Kids & Teens
-10. Global Hits (popular all)
-11. Korean Drama
-12. Japanese Shows (non-anime)
-13. Black Stories
-14. Action & Adventure
-15. Romance & Drama
-16. Comedy & Feel-Good
-17. Horror
-
-**Deduplication:** After Trending Now loads, collect IDs into a Set. Pass to Trending Movies/Series rows and filter those results to exclude already-shown IDs. Implement via a simple `excludeIds` param or post-fetch filter.
-
-Remove old rows: Nollywood, C-Drama, Thai Drama, South African Drama, Upcoming, Top Rated, Hidden Gems, Documentaries, Sci-Fi & Fantasy (replaced by the new consolidated rows).
-
-### 5. `src/components/MovieCard.tsx` — Add type label
-
-Show a small type badge on each card:
-- `MOVIE`, `TV`, `ANIME` label in top-right corner
-- Small semi-transparent pill overlay
-
-### 6. `src/pages/LibraryPage.tsx` — Fix watchlist filter
-
-- Change anime filter from `m.genre_ids?.includes(16) && m.original_language === "ja"` to `m.mediaType === "anime"`
-- Pass correct `mediaType` to MovieCard (currently casts to `"movie" | "tv"`, missing `"anime"`)
-- Implement toggle button behavior: use `toggleWatchlist` from library
-
-### 7. `src/pages/DetailsPage.tsx` — Watchlist toggle behavior + recs limit 20
-
-- Watchlist button: use `toggleWatchlist` — first click adds ("Added"), second click removes ("Add to Library")
-- Show text labels on button instead of just icons
-- Increase TasteDive recommendation limit from 12 to 20
-- Add failsafe: if TasteDive returns empty, fall back to TMDB `getSimilar()` for movie/tv or AniList recs for anime
-
-### 8. `src/pages/PlayerPage.tsx` — Anime progress saving + channel labels
-
-- Save anime progress to Continue Watching (currently only saves movie/tv)
-- Channel labels: anime channels display as "Channel 1" and "Channel 2" (not "Megaplay" / "Cinetaro")
-- Change `ANIME_CHANNELS[0].name` to "Channel 1" and `ANIME_CHANNELS[1].name` to "Channel 2"
-
-### 9. `src/lib/player.ts` — Update anime channel names
-
-- `ANIME_CHANNELS[0].name = "Channel 1"`
-- `ANIME_CHANNELS[1].name = "Channel 2"`
-
-### 10. `src/lib/tastedive.ts` — Increase limit to 20
-
-- Change `limit=12` to `limit=20` in URL
-- Change result caps from 12 to 20
+### 12. `src/pages/Index.tsx` — "Picked For You" row
+- When logged in: derive from user's watchlist genres/types
+- Simple implementation: fetch TMDB recommendations based on most recent watchlist items
+- When logged out: skip row (as currently done)
 
 ---
 
-## Key Bug Fixes
+## API Keys
+The TMDB key, AniList endpoint, and TasteDive key are already hardcoded in the source. These are all **public/publishable** keys (client-side API calls to public APIs), so no env var migration is needed — they work as-is. No secrets to add.
 
-| Bug | File | Fix |
-|-----|------|-----|
-| Anime missing from Continue Watching | PlayerPage, ContinueWatchingRow | Save anime progress; handle anime links |
-| Watchlist anime filter broken | LibraryPage | Use `mediaType === "anime"` not genre check |
-| Watchlist button not toggling | DetailsPage, library.ts | Add `toggleWatchlist`, show text state |
-| No type label on cards | MovieCard | Add type badge overlay |
-| No quality filtering on TMDB | tmdb.ts | Add `vote_count.gte`, `vote_average.gte` params |
-| Duplicate content across rows | Index.tsx | ID-based dedup between Trending Now and Movies/Series |
-| Channel labels wrong for anime | player.ts | Change names to "Channel 1"/"Channel 2" |
+---
+
+## Technical Notes
+
+- **No breaking changes**: All existing streaming, player, search, details, and recommendation features remain untouched
+- **Anonymous usage preserved**: The app works fully without login; Supabase is additive
+- **Content types remain**: `"movie" | "tv" | "anime"` — no changes to content classification
+- **Homepage row order stays**: 16 rows as currently implemented (Section 4 matches current Index.tsx exactly, with "Picked For You" added for logged-in users)
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/lib/tmdb.ts` | Add strict filter functions, quality filter, new categories |
-| `src/lib/library.ts` | Fix dedup by id+type, add toggleWatchlist, markCompleted, filter completed |
-| `src/lib/player.ts` | Rename anime channel names |
-| `src/lib/tastedive.ts` | Increase limit to 20 |
-| `src/components/ContinueWatchingRow.tsx` | Support anime type |
-| `src/components/MovieCard.tsx` | Add type label badge |
-| `src/pages/Index.tsx` | Reorder rows, new fetch calls, dedup |
-| `src/pages/DetailsPage.tsx` | Watchlist toggle, recs failsafe, limit 20 |
-| `src/pages/PlayerPage.tsx` | Save anime progress |
-| `src/pages/LibraryPage.tsx` | Fix anime filter, toggle button |
+| Migration SQL | Create profiles, watchlist, continue_watching, downloads tables + RLS + trigger |
+| `src/contexts/AuthContext.tsx` | **Create** — Auth state provider |
+| `src/pages/AuthPage.tsx` | **Create** — Login/signup page |
+| `src/pages/ProfilePage.tsx` | **Create** — User profile + settings |
+| `src/pages/DownloadsPage.tsx` | **Create** — Downloads list page |
+| `src/lib/supabase-library.ts` | **Create** — Cloud library sync functions |
+| `src/App.tsx` | Modify — Add AuthProvider, new routes |
+| `src/components/BottomNav.tsx` | Modify — Add Profile tab |
+| `src/lib/library.ts` | Modify — Hybrid local+cloud sync |
+| `src/pages/DetailsPage.tsx` | Modify — Cloud watchlist integration |
+| `src/pages/PlayerPage.tsx` | Modify — Cloud progress saving |
+| `src/pages/LibraryPage.tsx` | Modify — Cloud data fetching |
+| `src/pages/Index.tsx` | Modify — Add "Picked For You" row |
 
