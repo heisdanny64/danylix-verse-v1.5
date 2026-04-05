@@ -1,27 +1,31 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, Sparkles, Library } from "lucide-react";
-
-const tabs = [
-  { to: "/", label: "Home", icon: Home },
-  { to: "/recommendations", label: "Recommendations", icon: Sparkles },
-  { to: "/library", label: "Library", icon: Library },
-];
+import { Home, Sparkles, Library, User } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const BottomNav = () => {
   const location = useLocation();
   const path = location.pathname;
+  const { user } = useAuth();
 
-  // Hide on movie/series details, player, search, and category pages
+  // Hide on certain pages
   if (
     path.startsWith("/movie/") ||
     path.startsWith("/series/") ||
     path.startsWith("/details/") ||
     path.startsWith("/player/") ||
     path.startsWith("/category/") ||
-    path === "/search"
+    path === "/search" ||
+    path === "/auth"
   ) {
     return null;
   }
+
+  const tabs = [
+    { to: "/", label: "Home", icon: Home },
+    { to: "/recommendations", label: "Discover", icon: Sparkles },
+    { to: "/library", label: "Library", icon: Library },
+    { to: user ? "/profile" : "/auth", label: user ? "Profile" : "Sign In", icon: User },
+  ];
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-area-bottom">

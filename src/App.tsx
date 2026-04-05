@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider } from "@/contexts/AuthContext";
 import BottomNav from "@/components/BottomNav";
 import Index from "./pages/Index.tsx";
 import SearchPage from "./pages/SearchPage.tsx";
@@ -11,32 +12,40 @@ import PlayerPage from "./pages/PlayerPage.tsx";
 import CategoryPage from "./pages/CategoryPage.tsx";
 import RecommendationsPage from "./pages/RecommendationsPage.tsx";
 import LibraryPage from "./pages/LibraryPage.tsx";
+import AuthPage from "./pages/AuthPage.tsx";
+import ProfilePage from "./pages/ProfilePage.tsx";
+import DownloadsPage from "./pages/DownloadsPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/search" element={<SearchPage />} />
-          <Route path="/details/:type/:id" element={<DetailsPage />} />
-          <Route path="/player/:type/:id" element={<PlayerPage />} />
-          <Route path="/category/:slug" element={<CategoryPage />} />
-          <Route path="/recommendations" element={<RecommendationsPage />} />
-          <Route path="/library" element={<LibraryPage />} />
-          {/* Legacy redirects */}
-          <Route path="/movie/movie-:id" element={<LegacyMovieRedirect />} />
-          <Route path="/series/:id" element={<LegacySeriesRedirect />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        <BottomNav />
-      </BrowserRouter>
-    </TooltipProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/search" element={<SearchPage />} />
+            <Route path="/details/:type/:id" element={<DetailsPage />} />
+            <Route path="/player/:type/:id" element={<PlayerPage />} />
+            <Route path="/category/:slug" element={<CategoryPage />} />
+            <Route path="/recommendations" element={<RecommendationsPage />} />
+            <Route path="/library" element={<LibraryPage />} />
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/downloads" element={<DownloadsPage />} />
+            {/* Legacy redirects */}
+            <Route path="/movie/movie-:id" element={<LegacyMovieRedirect />} />
+            <Route path="/series/:id" element={<LegacySeriesRedirect />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+          <BottomNav />
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
