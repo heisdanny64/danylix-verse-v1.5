@@ -296,6 +296,31 @@ export function isAnime(item: TMDBMovie | TMDBMovieDetail): boolean {
   return isJapanese && isAnimation;
 }
 
+// --- Anime detection helpers ---
+
+/**
+ * Exclude items detected as anime (by heuristic: Japanese + Animation genre).
+ */
+export function excludeAnime(items: TMDBMovie[]): TMDBMovie[] {
+  return items.filter(i => !isAnime(i) && (i as any)._isAnimeCard !== true && i.media_type !== "anime");
+}
+
+/**
+ * Limit anime items to at most maxPercent of the array.
+ */
+export function limitAnime(items: TMDBMovie[], maxPercent = 0.2): TMDBMovie[] {
+  const maxAnime = Math.floor(items.length * maxPercent);
+  let animeCount = 0;
+  return items.filter(i => {
+    const itemIsAnime = isAnime(i) || (i as any)._isAnimeCard === true || i.media_type === "anime";
+    if (itemIsAnime) {
+      animeCount++;
+      return animeCount <= maxAnime;
+    }
+    return true;
+  });
+}
+
 export function sortByFreshness(items: TMDBMovie[]): TMDBMovie[] {
   return [...items].sort((a, b) => {
     const scoreA = getFreshnessScore(a);
@@ -347,21 +372,25 @@ export async function getUpcoming(page = 1) {
 export interface CategoryConfig {
   title: string;
   mediaType: "movie" | "tv" | "anime";
+  /** When true, each item carries its own media_type — don't force a static type on cards */
+  mixed?: boolean;
+  /** Post-process function applied after fetch (e.g. excludeAnime) */
+  postProcess?: (items: TMDBMovie[]) => TMDBMovie[];
   fetchFn: (page?: number) => Promise<TMDBMovie[]>;
 }
 
 export const CATEGORY_MAP: Record<string, CategoryConfig> = {
-  "trending-today": { title: "Trending Now", mediaType: "movie", fetchFn: () => getTrending("all", "day") },
+  "trending-today": { title: "Trending Now", mediaType: "movie", mixed: true, fetchFn: () => getTrending("all", "day") },
   "trending-movies": { title: "Trending Movies", mediaType: "movie", fetchFn: (p) => getTrendingMovies(p) },
   "trending-series": { title: "Trending Series", mediaType: "tv", fetchFn: (p) => getTrendingSeries(p) },
-  "animation": { title: "Animation", mediaType: "movie", fetchFn: (p) => getAnimation(p) },
-  "kids-teens": { title: "Kids & Teens", mediaType: "tv", fetchFn: (p) => getKidsTeens(p) },
-  "global-hits": { title: "Global Hits", mediaType: "movie", fetchFn: (p) => getGlobalHits(p) },
+  "animation": { title: "Animation", mediaType: "movie", mixed: true, postProcess: excludeAnime, fetchFn: (p) => getAnimation(p) },
+  "kids-teens": { title: "Kids & Teens", mediaType: "tv", postProcess: excludeAnime, fetchFn: (p) => getKidsTeens(p) },
+  "global-hits": { title: "Global Hits", mediaType: "movie", postProcess: (items) => limitAnime(items, 0.2), fetchFn: (p) => getGlobalHits(p) },
   "korean-dramas": { title: "Korean Drama", mediaType: "tv", fetchFn: (p) => getKoreanDrama(p) },
-  "japanese-shows": { title: "Japanese Shows", mediaType: "tv", fetchFn: (p) => getJapaneseShows(p) },
+  "japanese-shows": { title: "Japanese Shows", mediaType: "tv", postProcess: excludeAnime, fetchFn: (p) => getJapaneseShows(p) },
   "black-stories": { title: "Black Stories", mediaType: "movie", fetchFn: (p) => getBlackStories(p) },
-  "action": { title: "Action & Adventure", mediaType: "movie", fetchFn: (p) => getAction(p) },
-  "romance-drama": { title: "Romance & Drama", mediaType: "movie", fetchFn: (p) => getRomanceDrama(p) },
-  "comedy": { title: "Comedy & Feel-Good", mediaType: "movie", fetchFn: (p) => getComedy(p) },
-  "horror": { title: "Horror", mediaType: "movie", fetchFn: (p) => getHorror(p) },
+  "action": { title: "Action & Adventure", mediaType: "movie", postProcess: excludeAnime, fetchFn: (p) => getAction(p) },
+  "romance-drama": { title: "Romance & Drama", mediaType: "movie", postProcess: excludeAnime, fetchFn: (p) => getRomanceDrama(p) },
+  "comedy": { title: "Comedy & Feel-Good", mediaType: "movie", postProcess: excludeAnime, fetchFn: (p) => getComedy(p) },
+  "horror": { title: "Horror", mediaType: "movie", postProcess: excludeAnime, fetchFn: (p) => getHorror(p) },
 };

@@ -10,7 +10,7 @@ import {
   getAnimation, getKidsTeens, getGlobalHits,
   getKoreanDrama, getJapaneseShows, getBlackStories,
   getAction, getRomanceDrama, getComedy, getHorror,
-  sortByFreshness,
+  sortByFreshness, excludeAnime, limitAnime,
 } from "@/lib/tmdb";
 import { getTrendingAnime, getPopularAnime, animeToCard } from "@/lib/anilist";
 
@@ -41,16 +41,16 @@ const HomePage = () => {
   const popularAnime = useQuery({ queryKey: ["popular-anime-anilist"], queryFn: async () => (await getPopularAnime()).map(animeToCard) });
 
   // Category rows
-  const animation = useQuery({ queryKey: ["animation"], queryFn: () => getAnimation() });
-  const kidsTeens = useQuery({ queryKey: ["kids-teens"], queryFn: () => getKidsTeens() });
-  const globalHits = useQuery({ queryKey: ["global-hits"], queryFn: () => getGlobalHits() });
+  const animation = useQuery({ queryKey: ["animation"], queryFn: async () => excludeAnime(await getAnimation()) });
+  const kidsTeens = useQuery({ queryKey: ["kids-teens"], queryFn: async () => excludeAnime(await getKidsTeens()) });
+  const globalHits = useQuery({ queryKey: ["global-hits"], queryFn: async () => limitAnime(await getGlobalHits(), 0.2) });
   const koreanDrama = useQuery({ queryKey: ["korean-dramas"], queryFn: () => getKoreanDrama() });
-  const japaneseShows = useQuery({ queryKey: ["japanese-shows"], queryFn: () => getJapaneseShows() });
+  const japaneseShows = useQuery({ queryKey: ["japanese-shows"], queryFn: async () => excludeAnime(await getJapaneseShows()) });
   const blackStories = useQuery({ queryKey: ["black-stories"], queryFn: () => getBlackStories() });
-  const action = useQuery({ queryKey: ["action"], queryFn: () => getAction() });
-  const romanceDrama = useQuery({ queryKey: ["romance-drama"], queryFn: () => getRomanceDrama() });
-  const comedy = useQuery({ queryKey: ["comedy"], queryFn: () => getComedy() });
-  const horror = useQuery({ queryKey: ["horror"], queryFn: () => getHorror() });
+  const action = useQuery({ queryKey: ["action"], queryFn: async () => excludeAnime(await getAction()) });
+  const romanceDrama = useQuery({ queryKey: ["romance-drama"], queryFn: async () => excludeAnime(await getRomanceDrama()) });
+  const comedy = useQuery({ queryKey: ["comedy"], queryFn: async () => excludeAnime(await getComedy()) });
+  const horror = useQuery({ queryKey: ["horror"], queryFn: async () => excludeAnime(await getHorror()) });
 
   return (
     <div className="pb-24 min-h-screen">

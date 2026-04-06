@@ -28,6 +28,7 @@ const CategoryPage = () => {
   const tmdbConfig = slug ? CATEGORY_MAP[slug] : undefined;
   const animeConfig = slug ? ANIME_CATEGORIES[slug] : undefined;
   const config = tmdbConfig || animeConfig;
+  const isMixed = tmdbConfig?.mixed || false;
   const mediaType = animeConfig?.mediaType || tmdbConfig?.mediaType || "movie";
 
   const [page, setPage] = useState(1);
@@ -35,14 +36,17 @@ const CategoryPage = () => {
   const [hasMore, setHasMore] = useState(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  const postProcess = tmdbConfig?.postProcess;
+
   const { isLoading, isFetching } = useQuery({
     queryKey: ["category", slug, page],
     queryFn: async () => {
-      const results = await config!.fetchFn(page);
+      let results = await config!.fetchFn(page);
       if (!results || results.length === 0) {
         setHasMore(false);
         return results;
       }
+      if (postProcess) results = postProcess(results);
       setAllMovies((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
         const newItems = results.filter((m) => !existingIds.has(m.id));
@@ -102,7 +106,7 @@ const CategoryPage = () => {
             ))
           : allMovies.map((movie) => (
               <div key={movie.id} className="w-full">
-                <MovieCard movie={movie} mediaType={mediaType as any} compact />
+                <MovieCard movie={movie} mediaType={isMixed ? undefined : mediaType as any} compact />
               </div>
             ))}
       </div>
