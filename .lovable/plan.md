@@ -1,169 +1,63 @@
 
 
-# D.Verse Full Backend Integration Plan
+# Full System Restructure Plan
 
 ## Overview
-Add Supabase-backed authentication, user profiles, cloud-persisted watchlist/continue-watching/downloads, a profile page with settings, and wire the existing localStorage-based library to sync with Supabase when logged in. The app works without login (localStorage fallback) but syncs to cloud when authenticated.
+Fix content classification (anime detection), type label consistency across pages, profile page redesign, navigation restructure (5-tab with Downloads), and watchlist button responsiveness. No database changes needed — schema is already complete.
 
-## Database Schema (1 migration)
+## Changes
 
-### Tables
+### 1. `src/lib/tmdb.ts` — Add anime detection helper
 
-**profiles**
-- `id` uuid PK → references `auth.users(id)` ON DELETE CASCADE
-- `name` text NOT NULL
-- `username` text UNIQUE NOT NULL
-- `email` text NOT NULL
-- `avatar_url` text NULL
-- `created_at` timestamptz DEFAULT now()
+Add `detectAndFilterAnime(items: TMDBMovie[]): Promise<TMDBMovie[]>` that:
+- For each item, extracts title and searches AniList (batch, with concurrency limit)
+- If AniList match found: mark `_isAnimeCard: true`, `media_type: "anime"`, replace poster/metadata with AniList data
+- Returns enriched array
 
-**watchlist**
-- `id` uuid PK DEFAULT gen_random_uuid()
-- `user_id` uuid NOT NULL → references `auth.users(id)` ON DELETE CASCADE
-- `content_id` text NOT NULL (string to handle both TMDB and AniList IDs)
-- `content_type` text NOT NULL CHECK (content_type IN ('movie','tv','anime'))
-- `title` text NOT NULL
-- `poster` text
-- `added_at` timestamptz DEFAULT now()
-- UNIQUE(user_id, content_id, content_type)
+Add `excludeAnime(items: TMDBMovie[]): TMDBMovie[]` — filters out items where `_isAnimeCard === true` or `media_type === "anime"`.
 
-**continue_watching**
-- `id` uuid PK DEFAULT gen_random_uuid()
-- `user_id` uuid NOT NULL → references `auth.users(id)` ON DELETE CASCADE
-- `content_id` text NOT NULL
-- `content_type` text NOT NULL CHECK (content_type IN ('movie','tv','anime'))
-- `title` text NOT NULL
-- `poster` text
-- `season` int
-- `episode` int
-- `progress` real NOT NULL DEFAULT 0 (0-100)
-- `last_channel` int
-- `updated_at` timestamptz DEFAULT now()
-- UNIQUE(user_id, content_id, content_type)
+Add `limitAnime(items: TMDBMovie[], maxPercent: number): TMDBMovie[]` — caps anime to N% of total.
 
-**downloads**
-- `id` uuid PK DEFAULT gen_random_uuid()
-- `user_id` uuid NOT NULL → references `auth.users(id)` ON DELETE CASCADE
-- `content_id` text NOT NULL
-- `content_type` text NOT NULL
-- `title` text NOT NULL
-- `poster` text
-- `file_url` text
-- `created_at` timestamptz DEFAULT now()
+Update `CATEGORY_MAP` entries to set correct `mediaType` per item's actual `media_type` field (not a single static value). Add a `preserveItemType: true` flag to categories where items carry their own type.
 
-### RLS Policies
-All tables: enable RLS. Users can SELECT/INSERT/UPDATE/DELETE only their own rows (`auth.uid() = user_id`). Profiles: users can SELECT/UPDATE own row only.
+### 2. `src/pages/Index.tsx` — Apply anime detection + distribution rules
 
-### Trigger
-`handle_new_user` trigger on `auth.users` AFTER INSERT: auto-creates a profile row using `raw_user_meta_data->>'name'`, `raw_user_meta_data->>'username'`, and `email`.
+**Mixed rows** (Trending Now): Run `detectAndFilterAnime()` on results so anime items get AniList metadata.
 
-### Function for username lookup
-`get_email_by_username(username text)` — SECURITY DEFINER function that returns the email for a given username, used for login-by-username flow.
+**Strict non-anime rows** (Animation, Kids & Teens, Action, Romance, Comedy, Horror, Korean Drama, Japanese Shows): Apply `excludeAnime()` after fetch.
 
----
+**Global Hits**: Apply `limitAnime()` with 20% cap.
 
-## Files to Create
+**Anime-only rows**: Already correct (AniList source).
 
-### 1. `src/contexts/AuthContext.tsx` — Auth provider
-- Wraps app with auth state via `onAuthStateChange` + `getSession`
-- Exports `useAuth()` hook: `{ user, profile, loading, signUp, signIn, signOut, updateProfile, updatePassword }`
-- `signUp(name, username, email, password)`: calls `supabase.auth.signUp` with metadata `{ name, username }`
-- `signIn(identifier, password)`: if identifier contains `@`, sign in directly; otherwise call `get_email_by_username` RPC to resolve email first
-- Fetches profile from `profiles` table after auth state change
+Row order stays as-is (matches Section 4 exactly).
 
-### 2. `src/pages/AuthPage.tsx` — Login / Sign Up page
-- Tab-based UI: Login | Sign Up
-- Login: email-or-username + password fields
-- Sign Up: name, username, email, password, confirm password
-- Client-side validation (username format, password match, min length)
-- Redirects to `/` on success
+### 3. `src/components/MovieCard.tsx` — Fix type label
 
-### 3. `src/pages/ProfilePage.tsx` — User profile page
-- Shows: name, username, email
-- "Edit Profile" button → inline edit or modal for name/username
-- "Change Password" section: old password (not needed for Supabase — just new + confirm)
-- Downloads preview row (horizontal scroll, links to `/downloads`)
-- About / Privacy / Terms links (placeholder pages or modals)
-- Sign Out button
+Current issue: `const type = mediaType || movie.media_type || "movie"` — the `mediaType` prop overrides the item's actual type.
 
-### 4. `src/pages/DownloadsPage.tsx` — Full downloads list
-- Grid of downloaded content cards
-- Fetches from `downloads` table
-- Empty state if none
+Fix: Prefer `movie.media_type` when available (it's set per-item), then fall back to `mediaType` prop, then `"movie"`. This ensures each card shows its correct type even in mixed rows.
 
-### 5. `src/lib/supabase-library.ts` — Cloud-synced library functions
-- `syncWatchlist(userId)`: fetch user's watchlist from Supabase
-- `addToCloudWatchlist(userId, item)`: upsert into watchlist table
-- `removeFromCloudWatchlist(userId, contentId, contentType)`: delete
-- `syncContinueWatching(userId)`: fetch from continue_watching
-- `updateCloudProgress(userId, item)`: upsert; if progress >= 95, delete instead
-- All functions handle errors gracefully and fall back to localStorage
+```ts
+const type = movie.media_type || mediaType || "movie";
+```
 
----
+### 4. `src/pages/CategoryPage.tsx` — Fix type labels on View All page
 
-## Files to Modify
+Current bug: passes a single `mediaType` to all cards. Fix: pass each item's own `movie.media_type` or omit `mediaType` prop so MovieCard uses the item's `media_type` field.
 
-### 6. `src/App.tsx` — Add auth provider + new routes
-- Wrap with `<AuthProvider>`
-- Add routes: `/auth`, `/profile`, `/downloads`
-- Add protected route wrapper (redirect to `/auth` if not logged in for profile/downloads)
+For `CATEGORY_MAP` entries with mixed content (e.g., "trending-today", "animation"), don't pass a static `mediaType`. For single-type categories, keep existing behavior.
 
-### 7. `src/components/BottomNav.tsx` — Add Profile tab
-- Add Profile icon/tab (User icon) → `/profile`
-- Show only when logged in; show "Sign In" link when not
+Add a `mixed` flag to CategoryConfig. When `mixed`, don't pass `mediaType` to MovieCard.
 
-### 8. `src/lib/library.ts` — Hybrid localStorage + Supabase sync
-- Accept optional `userId` parameter
-- When user is logged in: read/write to Supabase, cache locally
-- When logged out: localStorage only (current behavior)
-- On login: merge localStorage data into Supabase (one-time sync)
+### 5. `src/pages/ProfilePage.tsx` — Complete redesign matching reference UI
 
-### 9. `src/pages/DetailsPage.tsx` — Wire cloud watchlist
-- Use auth context to determine if cloud or local
-- Watchlist toggle calls cloud functions when logged in
+Redesign to match the dark Settings/Edit Profile reference:
+- **Settings view** (default): User card at top (avatar, name, @username, chevron to edit), followed by grouped settings rows: General Settings, Change Password, About, Terms of Service, Privacy Policy. Large red "Log Out" button at bottom.
+- **Edit Profile view** (inline state toggle): Avatar with edit icon, form fields (Full name, Email read-only, Username), green "Save Changes" button, "Delete Account" text button at bottom.
+- Remove downloads section from profile page entirely.
 
-### 10. `src/pages/PlayerPage.tsx` — Wire cloud continue-watching
-- Save progress to Supabase when logged in
-- Remove from continue_watching when progress >= 95%
+### 6. `src/components/BottomNav.tsx` — 5-tab navigation
 
-### 11. `src/pages/LibraryPage.tsx` — Fetch from Supabase when logged in
-- Use cloud watchlist data when authenticated
-- Keep localStorage fallback for anonymous users
-
-### 12. `src/pages/Index.tsx` — "Picked For You" row
-- When logged in: derive from user's watchlist genres/types
-- Simple implementation: fetch TMDB recommendations based on most recent watchlist items
-- When logged out: skip row (as currently done)
-
----
-
-## API Keys
-The TMDB key, AniList endpoint, and TasteDive key are already hardcoded in the source. These are all **public/publishable** keys (client-side API calls to public APIs), so no env var migration is needed — they work as-is. No secrets to add.
-
----
-
-## Technical Notes
-
-- **No breaking changes**: All existing streaming, player, search, details, and recommendation features remain untouched
-- **Anonymous usage preserved**: The app works fully without login; Supabase is additive
-- **Content types remain**: `"movie" | "tv" | "anime"` — no changes to content classification
-- **Homepage row order stays**: 16 rows as currently implemented (Section 4 matches current Index.tsx exactly, with "Picked For You" added for logged-in users)
-
-## Files Summary
-
-| File | Action |
-|------|--------|
-| Migration SQL | Create profiles, watchlist, continue_watching, downloads tables + RLS + trigger |
-| `src/contexts/AuthContext.tsx` | **Create** — Auth state provider |
-| `src/pages/AuthPage.tsx` | **Create** — Login/signup page |
-| `src/pages/ProfilePage.tsx` | **Create** — User profile + settings |
-| `src/pages/DownloadsPage.tsx` | **Create** — Downloads list page |
-| `src/lib/supabase-library.ts` | **Create** — Cloud library sync functions |
-| `src/App.tsx` | Modify — Add AuthProvider, new routes |
-| `src/components/BottomNav.tsx` | Modify — Add Profile tab |
-| `src/lib/library.ts` | Modify — Hybrid local+cloud sync |
-| `src/pages/DetailsPage.tsx` | Modify — Cloud watchlist integration |
-| `src/pages/PlayerPage.tsx` | Modify — Cloud progress saving |
-| `src/pages/LibraryPage.tsx` | Modify — Cloud data fetching |
-| `src/pages/Index.tsx` | Modify — Add "Picked For You" row |
-
+Update tabs array:
+1. Home → `/`
