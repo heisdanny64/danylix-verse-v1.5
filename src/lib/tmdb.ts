@@ -296,6 +296,31 @@ export function isAnime(item: TMDBMovie | TMDBMovieDetail): boolean {
   return isJapanese && isAnimation;
 }
 
+// --- Anime detection helpers ---
+
+/**
+ * Exclude items detected as anime (by heuristic: Japanese + Animation genre).
+ */
+export function excludeAnime(items: TMDBMovie[]): TMDBMovie[] {
+  return items.filter(i => !isAnime(i) && (i as any)._isAnimeCard !== true && i.media_type !== "anime");
+}
+
+/**
+ * Limit anime items to at most maxPercent of the array.
+ */
+export function limitAnime(items: TMDBMovie[], maxPercent = 0.2): TMDBMovie[] {
+  const maxAnime = Math.floor(items.length * maxPercent);
+  let animeCount = 0;
+  return items.filter(i => {
+    const itemIsAnime = isAnime(i) || (i as any)._isAnimeCard === true || i.media_type === "anime";
+    if (itemIsAnime) {
+      animeCount++;
+      return animeCount <= maxAnime;
+    }
+    return true;
+  });
+}
+
 export function sortByFreshness(items: TMDBMovie[]): TMDBMovie[] {
   return [...items].sort((a, b) => {
     const scoreA = getFreshnessScore(a);
