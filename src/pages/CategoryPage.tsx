@@ -106,7 +106,7 @@ const CategoryPage = () => {
             ))
           : allMovies.map((movie) => (
               <div key={movie.id} className="w-full">
-                <MovieCard movie={movie} mediaType={mediaType as any} compact />
+                <MovieCard movie={movie} mediaType={isMixed ? undefined : mediaType as any} compact />
               </div>
             ))}
       </div>
