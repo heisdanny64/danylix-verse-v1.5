@@ -28,6 +28,7 @@ const CategoryPage = () => {
   const tmdbConfig = slug ? CATEGORY_MAP[slug] : undefined;
   const animeConfig = slug ? ANIME_CATEGORIES[slug] : undefined;
   const config = tmdbConfig || animeConfig;
+  const isMixed = tmdbConfig?.mixed || false;
   const mediaType = animeConfig?.mediaType || tmdbConfig?.mediaType || "movie";
 
   const [page, setPage] = useState(1);
