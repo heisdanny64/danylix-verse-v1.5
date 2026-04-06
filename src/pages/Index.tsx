@@ -10,7 +10,7 @@ import {
   getAnimation, getKidsTeens, getGlobalHits,
   getKoreanDrama, getJapaneseShows, getBlackStories,
   getAction, getRomanceDrama, getComedy, getHorror,
-  sortByFreshness,
+  sortByFreshness, excludeAnime, limitAnime,
 } from "@/lib/tmdb";
 import { getTrendingAnime, getPopularAnime, animeToCard } from "@/lib/anilist";
 
