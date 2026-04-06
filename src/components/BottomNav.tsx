@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, Sparkles, Library, User } from "lucide-react";
+import { Home, Sparkles, Library, Download, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const BottomNav = () => {
@@ -24,7 +24,8 @@ const BottomNav = () => {
     { to: "/", label: "Home", icon: Home },
     { to: "/recommendations", label: "Discover", icon: Sparkles },
     { to: "/library", label: "Library", icon: Library },
-    { to: user ? "/profile" : "/auth", label: user ? "Profile" : "Sign In", icon: User },
+    { to: "/downloads", label: "Downloads", icon: Download },
+    { to: user ? "/profile" : "/auth", label: user ? "Me" : "Sign In", icon: User },
   ];
 
   return (
@@ -36,7 +37,7 @@ const BottomNav = () => {
             to={to}
             end={to === "/"}
             className={({ isActive }) =>
-              `flex flex-col items-center gap-1 px-4 py-2 text-xs transition-colors ${
+              `flex flex-col items-center gap-1 px-2 py-2 text-[10px] transition-colors ${
                 isActive ? "text-primary" : "text-muted-foreground"
               }`
             }
