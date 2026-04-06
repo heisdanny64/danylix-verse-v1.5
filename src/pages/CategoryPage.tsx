@@ -36,14 +36,17 @@ const CategoryPage = () => {
   const [hasMore, setHasMore] = useState(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  const postProcess = tmdbConfig?.postProcess;
+
   const { isLoading, isFetching } = useQuery({
     queryKey: ["category", slug, page],
     queryFn: async () => {
-      const results = await config!.fetchFn(page);
+      let results = await config!.fetchFn(page);
       if (!results || results.length === 0) {
         setHasMore(false);
         return results;
       }
+      if (postProcess) results = postProcess(results);
       setAllMovies((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
         const newItems = results.filter((m) => !existingIds.has(m.id));
