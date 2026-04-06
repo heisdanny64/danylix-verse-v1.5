@@ -157,7 +157,7 @@ const DetailsPage = () => {
             onClick={handleToggleWatchlist}
           >
             {inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {inWatchlist ? "Added" : "Add to Library"}
+            <span className="hidden md:inline">{inWatchlist ? "Added" : "Add to Library"}</span>
           </Button>
           <Button
             variant="outline"
