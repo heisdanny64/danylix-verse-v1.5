@@ -12,12 +12,15 @@ import { useToast } from "@/hooks/use-toast";
 import EpisodeList from "@/components/EpisodeList";
 import AnimeEpisodeList from "@/components/AnimeEpisodeList";
 import MovieRow from "@/components/MovieRow";
+import DownloadModal from "@/components/DownloadModal";
+import { useState } from "react";
 
 const DetailsPage = () => {
   const { type, id } = useParams<{ type: string; id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { toggleWatchlist, isInWatchlist } = useLibrary();
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   const contentType = (type as "movie" | "tv" | "anime") || "movie";
   const numericId = Number(id);
@@ -162,7 +165,7 @@ const DetailsPage = () => {
           <Button
             variant="outline"
             className="gap-1.5"
-            onClick={() => toast({ title: "Coming Soon", description: "Download feature is not yet available." })}
+            onClick={() => setDownloadOpen(true)}
           >
             <Download className="w-4 h-4" />
           </Button>
@@ -192,6 +195,15 @@ const DetailsPage = () => {
           <MovieRow title="More Like This" movies={movieTvRecs} mediaType={contentType as "movie" | "tv"} />
         </div>
       )}
+
+      <DownloadModal
+        open={downloadOpen}
+        onClose={() => setDownloadOpen(false)}
+        type={contentType as "movie" | "tv"}
+        externalId={detail.id}
+        title={title}
+        year={year ? Number(year) : null}
+      />
     </div>
   );
 };
