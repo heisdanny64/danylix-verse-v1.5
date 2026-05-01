@@ -86,14 +86,24 @@ export async function searchGifted(query: string, page = 1): Promise<GiftedSearc
   if (!q) return [];
   try {
     const data = await callProxy<any>(`search/${q}`, { page });
-    const list = Array.isArray(data?.results)
-      ? data.results
-      : Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data)
-          ? data
-          : [];
-    return list as GiftedSearchItem[];
+    const list = Array.isArray(data?.results?.items)
+      ? data.results.items
+      : Array.isArray(data?.results)
+        ? data.results
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+    return list.map((r: any) => ({
+      subjectId: r.subjectId ?? r.id,
+      title: r.title || "",
+      releaseDate: r.releaseDate,
+      year: r.releaseDate ? Number(String(r.releaseDate).slice(0, 4)) : undefined,
+      imageUrl: r.cover?.url || r.thumbnail,
+      rating: r.imdbRatingValue ? Number(r.imdbRatingValue) : undefined,
+      type: r.subjectType === 1 ? "movie" : r.subjectType === 2 ? "tv" : undefined,
+    })) as GiftedSearchItem[];
   } catch {
     return [];
   }
@@ -156,10 +166,22 @@ export async function getGiftedSources(
   if (episode != null) query.episode = episode;
   try {
     const data = await callProxy<any>(`sources/${subjectId}`, query);
-    return {
-      results: Array.isArray(data?.results) ? data.results : [],
-      subtitles: Array.isArray(data?.subtitles) ? data.subtitles : [],
-    };
+    const results = Array.isArray(data?.results)
+      ? data.results.map((s: any) => ({
+          quality: String(s.quality || ""),
+          stream_url: String(s.stream_url || ""),
+          download_url: String(s.download_url || ""),
+          size: typeof s.size === "string" ? Number(s.size) : Number(s.size || 0),
+        }))
+      : [];
+    const subtitles = Array.isArray(data?.subtitles)
+      ? data.subtitles.map((s: any) => ({
+          lan: String(s.lan || "en"),
+          lanName: String(s.lanName || s.lan || "Subtitle"),
+          url: String(s.url || ""),
+        }))
+      : [];
+    return { results, subtitles };
   } catch {
     return { results: [], subtitles: [] };
   }
