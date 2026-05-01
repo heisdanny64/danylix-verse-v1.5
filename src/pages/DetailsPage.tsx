@@ -12,12 +12,15 @@ import { useToast } from "@/hooks/use-toast";
 import EpisodeList from "@/components/EpisodeList";
 import AnimeEpisodeList from "@/components/AnimeEpisodeList";
 import MovieRow from "@/components/MovieRow";
+import DownloadModal from "@/components/DownloadModal";
+import { useState } from "react";
 
 const DetailsPage = () => {
   const { type, id } = useParams<{ type: string; id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { toggleWatchlist, isInWatchlist } = useLibrary();
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   const contentType = (type as "movie" | "tv" | "anime") || "movie";
   const numericId = Number(id);
@@ -162,7 +165,7 @@ const DetailsPage = () => {
           <Button
             variant="outline"
             className="gap-1.5"
-            onClick={() => toast({ title: "Coming Soon", description: "Download feature is not yet available." })}
+            onClick={() => setDownloadOpen(true)}
           >
             <Download className="w-4 h-4" />
           </Button>
@@ -192,6 +195,15 @@ const DetailsPage = () => {
           <MovieRow title="More Like This" movies={movieTvRecs} mediaType={contentType as "movie" | "tv"} />
         </div>
       )}
+
+      <DownloadModal
+        open={downloadOpen}
+        onClose={() => setDownloadOpen(false)}
+        type={contentType as "movie" | "tv"}
+        externalId={detail.id}
+        title={title}
+        year={year ? Number(year) : null}
+      />
     </div>
   );
 };
@@ -206,6 +218,14 @@ interface AnimeDetailsViewProps {
 }
 
 const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchlist }: AnimeDetailsViewProps) => {
+  const [animeDownloadOpen, setAnimeDownloadOpen] = useState(false);
+
+  const { data: animeRecs } = useQuery({
+    queryKey: ["anime-recs-merged", anime?.id, anime?.title],
+    queryFn: () => getAnimeRecommendationsFromTasteDive(anime!.title, anime!.id),
+    enabled: !!anime,
+  });
+
   if (!anime) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -215,11 +235,6 @@ const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchli
   }
 
   const inWatchlist = isInWatchlist(anime.id, "anime");
-
-  const { data: animeRecs } = useQuery({
-    queryKey: ["anime-recs-merged", anime.id, anime.title],
-    queryFn: () => getAnimeRecommendationsFromTasteDive(anime.title, anime.id),
-  });
 
   const handlePlayEpisode = (_season: number, episode: number) => {
     navigate(`/player/anime/${anime.id}?season=1&episode=${episode}`);
@@ -301,7 +316,7 @@ const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchli
           <Button
             variant="outline"
             className="gap-1.5"
-            onClick={() => toast({ title: "Coming Soon", description: "Download feature is not yet available." })}
+            onClick={() => setAnimeDownloadOpen(true)}
           >
             <Download className="w-4 h-4" />
           </Button>
@@ -323,6 +338,17 @@ const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchli
           <MovieRow title="More Like This" movies={animeRecs} mediaType="anime" />
         </div>
       )}
+
+      <DownloadModal
+        open={animeDownloadOpen}
+        onClose={() => setAnimeDownloadOpen(false)}
+        type="anime"
+        externalId={anime.id}
+        title={anime.title}
+        year={anime.year}
+        season={1}
+        episode={1}
+      />
     </div>
   );
 };

@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import Hls from "hls.js";
 import {
   ArrowLeft,
   Play,
@@ -16,250 +18,401 @@ import {
   ChevronRight,
   Sliders,
   Subtitles as SubtitlesIcon,
-  Languages,
   Gauge,
-} from 'lucide-react';
-import { useMediaDetail } from '@/lib/anilist/hooks';
-import { useContinueWatching } from '@/lib/store';
-import { LazyImage } from '@/components/LazyImage';
-import { preferredTitle, mediaPath } from '@/lib/format';
-import { cn } from '@/lib/utils';
+  Volume2,
+  VolumeX,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
+import { getMovieDetails, getSeasonDetails, getDisplayInfo } from "@/lib/tmdb";
+import { getAnimeDetails } from "@/lib/anilist";
+import { useLibrary } from "@/lib/library";
+import {
+  findBestMatch,
+  getGiftedSources,
+  resolveAnimeEpisode,
+  type GiftedSource,
+  type GiftedSubtitle,
+} from "@/services/giftedApi";
+import { cn } from "@/lib/utils";
 
-const MOCK_DURATION = 24 * 60; // 24 minutes simulated
+type SettingsView = "root" | "quality" | "subtitle" | "speed";
+const SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as const;
 
-type Source = 'home' | 'details';
+function fmtTime(sec: number) {
+  if (!isFinite(sec) || sec < 0) return "0:00";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
-const QUALITIES = ['Auto', '1080p', '720p', '480p', '360p'] as const;
-const SUBTITLES = ['English', 'Japanese'] as const;
-const AUDIOS = ['English', 'Japanese'] as const;
-const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0] as const;
-
-type SettingsView = 'root' | 'quality' | 'subtitle' | 'audio' | 'speed';
+function qualityRank(q: string): number {
+  const m = String(q).match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
 
 export default function Player() {
-  const { id, ep } = useParams();
-  const mediaId = Number(id);
-  const episode = Math.max(1, Number(ep) || 1);
+  const { type, id } = useParams<{ type: string; id: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const location = useLocation();
-  const { data: m, isLoading } = useMediaDetail(mediaId);
-  const cw = useContinueWatching();
+  const { updateProgress } = useLibrary();
 
-  // Track entry source (persist across episode reloads via sessionStorage)
-  const sourceKey = `torii:player-source:${mediaId}`;
-  const initialSource: Source = useMemo(() => {
-    const fromState = (location.state as { source?: Source } | null)?.source;
-    if (fromState) {
-      try { sessionStorage.setItem(sourceKey, fromState); } catch { /* noop */ }
-      return fromState;
-    }
-    try {
-      const saved = sessionStorage.getItem(sourceKey) as Source | null;
-      if (saved === 'details' || saved === 'home') return saved;
-    } catch { /* noop */ }
-    return 'home';
-  }, [location.state, sourceKey]);
-  const [source] = useState<Source>(initialSource);
+  const contentType = (type as "movie" | "tv" | "anime") || "movie";
+  const isAnime = contentType === "anime";
+  const numericId = Number(id);
+  const season = Number(searchParams.get("season")) || 1;
+  const episode = Number(searchParams.get("episode")) || 1;
 
-  // Determine if this navigation should skip resume logic.
-  // `fresh: true` is set by player-internal nav (auto-next, play-now, prev/next buttons).
-  // External entries (Hero, ContinueWatching, Details) omit it and resume normally.
-  const isFreshNav = !!(location.state as { fresh?: boolean } | null)?.fresh;
+  // Metadata
+  const { data: tmdbDetails } = useQuery({
+    queryKey: ["player-detail", contentType, numericId],
+    queryFn: () => getMovieDetails(numericId, contentType as "movie" | "tv"),
+    enabled: !isAnime && !!numericId,
+  });
+  const { data: animeDetails } = useQuery({
+    queryKey: ["player-anime-detail", numericId],
+    queryFn: () => getAnimeDetails(numericId),
+    enabled: isAnime && !!numericId,
+  });
+  const { data: seasonData } = useQuery({
+    queryKey: ["player-season", numericId, season],
+    queryFn: () => getSeasonDetails(numericId, season),
+    enabled: contentType === "tv" && !!numericId,
+  });
 
-  const computeInitialPosition = () => {
-    if (isFreshNav) return 0;
-    const s = cw.get(mediaId);
-    const pos = s && s.episode === episode ? s.positionSec : 0;
-    // Safety: if saved position is past the end, restart
-    if (pos > MOCK_DURATION - 5) return 0;
-    return pos;
-  };
+  const title = isAnime
+    ? animeDetails?.title || ""
+    : tmdbDetails ? getDisplayInfo(tmdbDetails as any).title : "";
+  const year = isAnime
+    ? animeDetails?.year ?? null
+    : tmdbDetails ? getDisplayInfo(tmdbDetails as any).year ?? null : null;
 
-  const [position, setPosition] = useState<number>(computeInitialPosition);
-  const [playing, setPlaying] = useState(true);
-  const [showControls, setShowControls] = useState(true);
-  const hideTimer = useRef<number | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const totalEpisodes = isAnime
+    ? animeDetails?.episodes || 0
+    : seasonData?.episodes?.length || 0;
+  const isMovie = contentType === "movie";
+  const hasNext = !isMovie && (totalEpisodes === 0 || episode < totalEpisodes);
+  const hasPrev = !isMovie && episode > 1;
 
-  // Settings menu state
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsView, setSettingsView] = useState<SettingsView>('root');
-  const [quality, setQuality] = useState<typeof QUALITIES[number]>('Auto');
-  const [subtitle, setSubtitle] = useState<typeof SUBTITLES[number]>('English');
-  const [audio, setAudio] = useState<typeof AUDIOS[number]>('English');
+  // Resolved subjectId for Gifted
+  const matchEnabled = !!title;
+  const { data: subjectId, isLoading: matchingId, refetch: refetchMatch } = useQuery({
+    queryKey: ["gifted-match", contentType, numericId, title, year],
+    queryFn: () =>
+      findBestMatch({
+        title,
+        year: year as number | null,
+        type: contentType,
+        externalId: numericId,
+      }),
+    enabled: matchEnabled,
+    staleTime: 30 * 60 * 1000,
+  });
+
+  // Resolve absolute episode for anime sequels
+  const { data: absEpisode } = useQuery({
+    queryKey: ["anime-abs-ep", numericId, episode],
+    queryFn: () => resolveAnimeEpisode(numericId, episode),
+    enabled: isAnime && !!numericId,
+  });
+
+  const sourceSeason = isAnime ? undefined : isMovie ? undefined : season;
+  const sourceEpisode = isAnime
+    ? absEpisode ?? episode
+    : isMovie
+      ? undefined
+      : episode;
+
+  // Sources
+  const {
+    data: sourcesData,
+    isLoading: loadingSources,
+    refetch: refetchSources,
+    isError: sourcesError,
+  } = useQuery({
+    queryKey: ["gifted-sources", subjectId, sourceSeason, sourceEpisode],
+    queryFn: () => getGiftedSources(subjectId!, sourceSeason, sourceEpisode),
+    enabled: !!subjectId && (!isAnime || absEpisode !== undefined),
+  });
+
+  const sources: GiftedSource[] = useMemo(
+    () =>
+      [...(sourcesData?.results || [])].sort(
+        (a, b) => qualityRank(b.quality) - qualityRank(a.quality),
+      ),
+    [sourcesData],
+  );
+  const subtitles: GiftedSubtitle[] = sourcesData?.subtitles || [];
+
+  const [qualityIdx, setQualityIdx] = useState<number>(0); // 0 = highest = "Auto"
+  const [subtitleIdx, setSubtitleIdx] = useState<number>(-1); // -1 = Off
   const [speed, setSpeed] = useState<number>(1.0);
 
-  // Fullscreen state
+  // Reset selections when sources change
+  useEffect(() => {
+    setQualityIdx(0);
+    setSubtitleIdx(-1);
+  }, [subjectId, sourceEpisode]);
+
+  const activeSource = sources[qualityIdx] || sources[0];
+  const streamUrl = activeSource?.stream_url || "";
+
+  // Player state
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const hideTimer = useRef<number | null>(null);
+  const tapTimerRef = useRef<number | null>(null);
+  const tapCountRef = useRef(0);
+  const lastTapXRef = useRef(0);
+  const persistTimer = useRef<number | null>(null);
+
+  const [playing, setPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [showControls, setShowControls] = useState(true);
+  const [bufferLoading, setBufferLoading] = useState(true);
+  const [streamError, setStreamError] = useState(false);
+  const [seekIndicator, setSeekIndicator] = useState<{ side: "left" | "right"; visible: boolean }>({ side: "left", visible: false });
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsView, setSettingsView] = useState<SettingsView>("root");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Auto-next overlay
   const [autoNext, setAutoNext] = useState<number | null>(null);
   const autoNextTimer = useRef<number | null>(null);
 
-  // Skip persistence for one tick on fresh nav so stale state can't be written
-  const persistReadyRef = useRef<boolean>(!isFreshNav);
+  // Resume position to apply on next loadedmetadata
+  const resumeRef = useRef<number>(0);
 
-  const isMovie = !!m && (m.format === 'MOVIE' || m.episodes === 1);
-  const totalEp = m?.episodes ?? null;
-  const hasNext = !isMovie && (totalEp == null || episode < totalEp);
-  const hasPrev = !isMovie && episode > 1;
-  const nearEnd = position / MOCK_DURATION >= 0.8;
-
-  // On episode/media change: reset position & consume `fresh` flag from history state
+  // Load HLS / native source
   useEffect(() => {
-    setPosition(computeInitialPosition());
-    setPlaying(true);
-    persistReadyRef.current = false;
-    // Allow persistence after first tick
-    const ready = window.setTimeout(() => { persistReadyRef.current = true; }, 250);
-    // Strip `fresh` from history state so an in-tab refresh resumes normally
-    if (isFreshNav) {
-      navigate(location.pathname, { replace: true, state: { source } });
+    setStreamError(false);
+    setBufferLoading(true);
+    const video = videoRef.current;
+    if (!video || !streamUrl) return;
+
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
     }
-    return () => window.clearTimeout(ready);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaId, episode]);
 
-  // Auto-progress (speed-aware)
-  useEffect(() => {
-    if (!playing) return;
-    const interval = Math.max(50, Math.round(1000 / speed));
-    const t = window.setInterval(() => {
-      setPosition((p) => Math.min(MOCK_DURATION, p + 1));
-    }, interval);
-    return () => window.clearInterval(t);
-  }, [playing, speed]);
+    const isM3u8 = /\.m3u8(\?|$)/i.test(streamUrl);
 
-  // Persist progress every 3s
-  useEffect(() => {
-    if (!m) return;
-    const t = window.setInterval(() => {
-      if (!persistReadyRef.current) return;
-      cw.upsert({
-        id: m.id,
-        title: preferredTitle(m.title),
-        cover: m.bannerImage || m.coverImage.large || m.coverImage.medium || null,
-        episode,
-        totalEpisodes: m.episodes ?? null,
-        positionSec: position,
-        durationSec: MOCK_DURATION,
+    const handleReady = () => {
+      setBufferLoading(false);
+      if (resumeRef.current > 0) {
+        try { video.currentTime = resumeRef.current; } catch { /* noop */ }
+        resumeRef.current = 0;
+      }
+      video.play().catch(() => { /* autoplay blocked */ });
+    };
+
+    if (isM3u8 && Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true });
+      hlsRef.current = hls;
+      hls.on(Hls.Events.MANIFEST_PARSED, handleReady);
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (data.fatal) {
+          // Try next quality
+          if (qualityIdx + 1 < sources.length) {
+            setQualityIdx((i) => i + 1);
+          } else {
+            setStreamError(true);
+            setBufferLoading(false);
+          }
+        }
       });
-    }, 3000);
-    return () => window.clearInterval(t);
-  }, [m, episode, position, cw]);
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+    } else {
+      video.src = streamUrl;
+      video.addEventListener("loadedmetadata", handleReady, { once: true });
+    }
 
-  // Save once on unmount
-  useEffect(() => {
     return () => {
-      if (!m) return;
-      if (!persistReadyRef.current) return;
-      cw.upsert({
-        id: m.id,
-        title: preferredTitle(m.title),
-        cover: m.bannerImage || m.coverImage.large || m.coverImage.medium || null,
-        episode,
-        totalEpisodes: m.episodes ?? null,
-        positionSec: position,
-        durationSec: MOCK_DURATION,
-      });
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [streamUrl]);
 
-  // Listen for fullscreen changes
+  // Video listeners
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onTime = () => setPosition(v.currentTime);
+    const onDur = () => setDuration(v.duration);
+    const onWait = () => setBufferLoading(true);
+    const onCanPlay = () => setBufferLoading(false);
+    const onErr = () => {
+      if (qualityIdx + 1 < sources.length) setQualityIdx((i) => i + 1);
+      else setStreamError(true);
+    };
+    const onEnded = () => {
+      if (hasNext) setAutoNext(5);
+      else setPlaying(false);
+    };
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("durationchange", onDur);
+    v.addEventListener("waiting", onWait);
+    v.addEventListener("canplay", onCanPlay);
+    v.addEventListener("error", onErr);
+    v.addEventListener("ended", onEnded);
+    return () => {
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("durationchange", onDur);
+      v.removeEventListener("waiting", onWait);
+      v.removeEventListener("canplay", onCanPlay);
+      v.removeEventListener("error", onErr);
+      v.removeEventListener("ended", onEnded);
+    };
+  }, [qualityIdx, sources.length, hasNext]);
+
+  // Speed
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = speed;
+  }, [speed]);
+
+  // Quality switch: preserve position
+  useEffect(() => {
+    resumeRef.current = position;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qualityIdx]);
+
+  // Persist progress every 5s
+  useEffect(() => {
+    if (persistTimer.current) window.clearInterval(persistTimer.current);
+    persistTimer.current = window.setInterval(() => {
+      if (!duration || !position) return;
+      const pct = Math.min(100, Math.round((position / duration) * 100));
+      if (isAnime && animeDetails) {
+        const m = {
+          id: animeDetails.id,
+          title: animeDetails.title,
+          overview: animeDetails.description,
+          poster_path: animeDetails.poster,
+          backdrop_path: animeDetails.banner,
+          vote_average: animeDetails.rating,
+          release_date: animeDetails.year ? `${animeDetails.year}-01-01` : "",
+          genre_ids: [],
+          media_type: "anime",
+          _isAnimeCard: true,
+        } as any;
+        updateProgress(m, "anime", pct, 1, episode);
+      } else if (tmdbDetails) {
+        const m = {
+          id: tmdbDetails.id,
+          title: tmdbDetails.title,
+          name: tmdbDetails.name,
+          overview: tmdbDetails.overview,
+          poster_path: tmdbDetails.poster_path,
+          backdrop_path: tmdbDetails.backdrop_path,
+          vote_average: tmdbDetails.vote_average,
+          release_date: tmdbDetails.release_date,
+          first_air_date: tmdbDetails.first_air_date,
+          genre_ids: tmdbDetails.genres.map((g: any) => g.id),
+          media_type: contentType,
+        } as any;
+        updateProgress(m, contentType as "movie" | "tv", pct, season, episode);
+      }
+    }, 5000);
+    return () => {
+      if (persistTimer.current) window.clearInterval(persistTimer.current);
+    };
+  }, [position, duration, isAnime, animeDetails, tmdbDetails, contentType, season, episode, updateProgress]);
+
+  // Fullscreen tracking
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  // Cancel any auto-next timer when episode changes or unmounting
+  // Auto-next countdown
   useEffect(() => {
-    return () => {
-      if (autoNextTimer.current) {
-        window.clearTimeout(autoNextTimer.current);
-        autoNextTimer.current = null;
-      }
-    };
-  }, [mediaId, episode]);
-
-  // Auto-next trigger when episode finishes
-  useEffect(() => {
-    if (position < MOCK_DURATION) return;
-    if (!hasNext) {
-      setPlaying(false);
+    if (autoNext == null) return;
+    if (autoNext <= 0) {
+      setAutoNext(null);
+      goToEpisode(1);
       return;
     }
-    if (autoNextTimer.current) return;
-    setPlaying(false);
-    setAutoNext(5);
-    const tick = () => {
-      setAutoNext((n) => {
-        if (n == null) return null;
-        if (n <= 1) {
-          autoNextTimer.current = null;
-          navigate(`/watch/${mediaId}/${episode + 1}`, { state: { source, fresh: true } });
-          return null;
-        }
-        autoNextTimer.current = window.setTimeout(tick, 1000);
-        return n - 1;
-      });
-    };
-    autoNextTimer.current = window.setTimeout(tick, 1000);
+    autoNextTimer.current = window.setTimeout(() => setAutoNext((n) => (n != null ? n - 1 : null)), 1000);
     return () => {
-      if (autoNextTimer.current) {
-        window.clearTimeout(autoNextTimer.current);
-        autoNextTimer.current = null;
-      }
+      if (autoNextTimer.current) window.clearTimeout(autoNextTimer.current);
     };
-  }, [position, hasNext, mediaId, episode, navigate, source]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoNext]);
 
   const cancelAutoNext = useCallback(() => {
-    if (autoNextTimer.current) {
-      window.clearTimeout(autoNextTimer.current);
-      autoNextTimer.current = null;
-    }
+    if (autoNextTimer.current) window.clearTimeout(autoNextTimer.current);
     setAutoNext(null);
   }, []);
-
-  const flashControls = useCallback(() => {
-    setShowControls(true);
-    if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => setShowControls(false), 3000);
-  }, []);
-
-  useEffect(() => { flashControls(); }, [flashControls]);
 
   // Esc closes settings
   useEffect(() => {
     if (!settingsOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         setSettingsOpen(false);
-        setSettingsView('root');
+        setSettingsView("root");
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [settingsOpen]);
 
-  // Reset settings view whenever menu reopens
   useEffect(() => {
-    if (settingsOpen) setSettingsView('root');
+    if (settingsOpen) setSettingsView("root");
   }, [settingsOpen]);
 
-  const handleBack = useCallback(() => {
-    if (source === 'details' && m) {
-      navigate(mediaPath({ id: m.id, type: m.type, title: m.title }), { replace: true });
-    } else {
-      navigate('/', { replace: true });
-    }
-  }, [source, m, navigate]);
+  // Auto-hide controls
+  const flashControls = useCallback(() => {
+    setShowControls(true);
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      if (videoRef.current && !videoRef.current.paused) setShowControls(false);
+    }, 3000);
+  }, []);
 
-  const goToEpisode = (delta: 1 | -1) => {
+  useEffect(() => { flashControls(); }, [flashControls]);
+
+  const togglePlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else v.pause();
+  }, []);
+
+  const seekBy = useCallback((delta: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + delta));
+  }, []);
+
+  const goToEpisode = useCallback((delta: 1 | -1) => {
+    const next = episode + delta;
     cancelAutoNext();
-    navigate(`/watch/${mediaId}/${episode + delta}`, { state: { source, fresh: true } });
-  };
+    if (isAnime) {
+      navigate(`/player/anime/${numericId}?season=1&episode=${next}`, { replace: true });
+    } else {
+      navigate(`/player/tv/${numericId}?season=${season}&episode=${next}`, { replace: true });
+    }
+  }, [episode, isAnime, navigate, numericId, season, cancelAutoNext]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
@@ -267,70 +420,158 @@ export default function Player() {
     try {
       if (!document.fullscreenElement) {
         await el.requestFullscreen();
-        try {
-          // @ts-ignore - orientation.lock not in all TS lib targets
-          await screen.orientation?.lock?.('landscape');
-        } catch { /* unsupported (e.g. iOS) */ }
+        try { await (screen.orientation as any)?.lock?.("landscape"); } catch { /* noop */ }
       } else {
-        try { screen.orientation?.unlock?.(); } catch { /* noop */ }
+        try { (screen.orientation as any)?.unlock?.(); } catch { /* noop */ }
         await document.exitFullscreen();
       }
     } catch { /* noop */ }
   }, []);
 
-  if (!Number.isFinite(mediaId)) return <div className="p-8">Invalid episode.</div>;
+  const handleBack = useCallback(() => {
+    navigate(-1);
+  }, [navigate]);
 
-  const title = m ? preferredTitle(m.title) : '';
-  const epData = m?.streamingEpisodes?.[episode - 1];
-  const epTitle = epData?.title || `Episode ${episode}`;
-  const pct = (position / MOCK_DURATION) * 100;
+  const handleTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-controls]") || target.closest("[data-settings]")) return;
 
-  function fmtTime(sec: number) {
-    const mm = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${mm}:${String(s).padStart(2, '0')}`;
-  }
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const clientX = "touches" in e ? (e as React.TouchEvent).changedTouches[0].clientX : (e as React.MouseEvent).clientX;
+    const relX = (clientX - rect.left) / rect.width;
 
-  function seek(e: React.MouseEvent<HTMLDivElement>) {
+    tapCountRef.current += 1;
+    lastTapXRef.current = relX;
+    if (tapTimerRef.current) window.clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = window.setTimeout(() => {
+      const count = tapCountRef.current;
+      tapCountRef.current = 0;
+      if (count >= 2) {
+        if (lastTapXRef.current < 0.4) {
+          seekBy(-10);
+          setSeekIndicator({ side: "left", visible: true });
+        } else if (lastTapXRef.current > 0.6) {
+          seekBy(10);
+          setSeekIndicator({ side: "right", visible: true });
+        }
+        window.setTimeout(() => setSeekIndicator((s) => ({ ...s, visible: false })), 600);
+      } else {
+        setShowControls((p) => !p);
+        flashControls();
+      }
+    }, 250);
+  }, [seekBy, flashControls]);
+
+  const handleSeekClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (!duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = (e.clientX - rect.left) / rect.width;
-    setPosition(Math.max(0, Math.min(MOCK_DURATION, ratio * MOCK_DURATION)));
+    const v = videoRef.current;
+    if (v) v.currentTime = Math.max(0, Math.min(duration, ratio * duration));
     flashControls();
+  };
+
+  if (!Number.isFinite(numericId)) {
+    return <div className="p-8">Invalid content.</div>;
   }
+
+  const pct = duration ? (position / duration) * 100 : 0;
+  const initialLoading = matchingId || loadingSources;
+  const noMatch = !matchingId && !subjectId && !!title;
+  const noSources = !!subjectId && !loadingSources && sources.length === 0;
+  const hasFatal = noMatch || noSources || (sourcesError && !sources.length) || streamError;
+
+  const epLabel = isMovie ? "" : `S${season} · E${episode}`;
+  const subTrackUrl = subtitleIdx >= 0 ? subtitles[subtitleIdx]?.url : "";
 
   return (
     <div
       ref={containerRef}
       className="fixed inset-0 bg-black text-foreground select-none"
       onMouseMove={flashControls}
-      onClick={flashControls}
+      onClick={handleTap}
+      onTouchEnd={handleTap}
     >
-      {/* Background poster (fake video frame) */}
-      {m && (
-        <div className="absolute inset-0 opacity-50">
-          <LazyImage
-            src={epData?.thumbnail || m.bannerImage || m.coverImage.extraLarge || m.coverImage.large}
-            alt={title}
-            containerClassName="absolute inset-0"
-            className={cn('animate-zoom-slow', !playing && 'opacity-70')}
+      <video
+        ref={videoRef}
+        className="absolute inset-0 w-full h-full object-contain bg-black"
+        playsInline
+        preload="metadata"
+        crossOrigin="anonymous"
+      >
+        {subTrackUrl && (
+          <track
+            key={subTrackUrl}
+            kind="subtitles"
+            src={subTrackUrl}
+            label={subtitles[subtitleIdx]?.lanName || "Subtitle"}
+            srcLang={subtitles[subtitleIdx]?.lan || "en"}
+            default
           />
-          <div className="absolute inset-0 bg-black/40" />
+        )}
+      </video>
+
+      {/* Loading */}
+      {(initialLoading || bufferLoading) && !hasFatal && (
+        <div className="absolute inset-0 grid place-items-center pointer-events-none z-10">
+          <Loader2 className="w-12 h-12 text-primary animate-spin" />
         </div>
       )}
 
-      {isLoading && (
-        <div className="absolute inset-0 grid place-items-center text-muted-foreground">Loading…</div>
+      {/* Seek indicator */}
+      {seekIndicator.visible && (
+        <div
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 z-10 pointer-events-none",
+            seekIndicator.side === "left" ? "left-8" : "right-8",
+          )}
+        >
+          <div className="bg-background/70 backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium">
+            {seekIndicator.side === "left" ? "-10s" : "+10s"}
+          </div>
+        </div>
       )}
 
-      {/* Floating rotate / fullscreen button */}
+      {/* Fatal error overlay */}
+      {hasFatal && (
+        <div className="absolute inset-0 z-30 grid place-items-center bg-black/80 backdrop-blur-sm px-6">
+          <div className="text-center max-w-sm space-y-4">
+            <AlertCircle className="w-12 h-12 mx-auto text-destructive" />
+            <p className="text-lg font-semibold">Content not available right now</p>
+            <p className="text-sm text-muted-foreground">
+              {noMatch
+                ? "We couldn't find this title in the streaming catalog."
+                : "No playable sources were returned."}
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); setStreamError(false); refetchMatch(); refetchSources(); }}
+                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-sm"
+              >
+                <RefreshCw className="w-4 h-4" /> Retry
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleBack(); }}
+                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-sm"
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating fullscreen button */}
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); toggleFullscreen(); flashControls(); }}
         className={cn(
-          'absolute right-3 top-1/2 -translate-y-1/2 z-20 grid place-items-center h-10 w-10 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 transition-opacity',
-          showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          "absolute right-3 top-1/2 -translate-y-1/2 z-20 grid place-items-center h-10 w-10 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 transition-opacity",
+          showControls ? "opacity-100" : "opacity-0 pointer-events-none",
         )}
-        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
       >
         <RotateCw className="h-5 w-5" />
       </button>
@@ -338,12 +579,12 @@ export default function Player() {
       {/* Controls overlay */}
       <div
         className={cn(
-          'absolute inset-0 flex flex-col transition-opacity duration-300',
-          showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          "absolute inset-0 flex flex-col transition-opacity duration-300 z-10",
+          showControls ? "opacity-100" : "opacity-0 pointer-events-none",
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent safe-top">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent">
           <button
             onClick={(e) => { e.stopPropagation(); handleBack(); }}
             className="grid place-items-center h-10 w-10 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
@@ -353,42 +594,39 @@ export default function Player() {
           </button>
           <div className="text-center min-w-0 px-4">
             <p className="text-xs text-muted-foreground truncate">{title}</p>
-            <p className="text-sm font-medium truncate">
-              {isMovie ? 'Movie' : `Ep ${episode} · ${epTitle}`}
-            </p>
+            <p className="text-sm font-medium truncate">{isMovie ? "Movie" : epLabel}</p>
           </div>
           <button
             onClick={(e) => { e.stopPropagation(); setSettingsOpen((v) => !v); }}
             className={cn(
-              'grid place-items-center h-10 w-10 rounded-full backdrop-blur-md transition-colors',
-              settingsOpen ? 'bg-primary text-primary-foreground' : 'bg-background/40 hover:bg-background/70'
+              "grid place-items-center h-10 w-10 rounded-full backdrop-blur-md transition-colors",
+              settingsOpen ? "bg-primary text-primary-foreground" : "bg-background/40 hover:bg-background/70",
             )}
             aria-label="Settings"
-            aria-expanded={settingsOpen}
           >
             <Settings className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Center playback row */}
+        {/* Center playback */}
         <div className="flex-1 flex flex-col items-center justify-center gap-6">
           <div className="flex items-center justify-center gap-8">
             <button
-              onClick={(e) => { e.stopPropagation(); setPosition((p) => Math.max(0, p - 10)); }}
+              onClick={(e) => { e.stopPropagation(); seekBy(-10); }}
               className="grid place-items-center h-12 w-12 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
               aria-label="Rewind 10 seconds"
             >
               <Rewind className="h-6 w-6" />
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); setPlaying((p) => !p); cancelAutoNext(); }}
-              className="grid place-items-center h-20 w-20 rounded-full bg-primary text-primary-foreground shadow-glow-lg hover:scale-105 transition-transform"
-              aria-label={playing ? 'Pause' : 'Play'}
+              onClick={(e) => { e.stopPropagation(); togglePlay(); cancelAutoNext(); }}
+              className="grid place-items-center h-20 w-20 rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 transition-transform"
+              aria-label={playing ? "Pause" : "Play"}
             >
               {playing ? <Pause className="h-9 w-9 fill-current" /> : <Play className="h-9 w-9 fill-current ml-1" />}
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); setPosition((p) => Math.min(MOCK_DURATION, p + 10)); }}
+              onClick={(e) => { e.stopPropagation(); seekBy(10); }}
               className="grid place-items-center h-12 w-12 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
               aria-label="Forward 10 seconds"
             >
@@ -397,21 +635,19 @@ export default function Player() {
           </div>
         </div>
 
-        {/* Bottom: episode nav row + progress */}
-        <div className="p-4 pb-6 bg-gradient-to-t from-black/85 to-transparent safe-bottom">
-          {/* Episode nav row above timeline (hidden for movies) */}
+        {/* Bottom: episode nav + progress */}
+        <div data-controls className="p-4 pb-6 bg-gradient-to-t from-black/85 to-transparent">
           {!isMovie && (
             <div className="flex items-center justify-between mb-3 gap-2">
               <div className="flex-1 flex justify-start">
                 {hasPrev ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); goToEpisode(-1); }}
-                    className="inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-xs sm:text-sm transition-all"
-                    aria-label="Previous episode"
+                    className="inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-xs sm:text-sm"
                   >
                     <SkipBack className="h-4 w-4" />
-                    <span className="hidden xs:inline sm:inline">Previous Episode</span>
-                    <span className="xs:hidden sm:hidden">Prev</span>
+                    <span className="hidden sm:inline">Previous Episode</span>
+                    <span className="sm:hidden">Prev</span>
                   </button>
                 ) : <span />}
               </div>
@@ -419,14 +655,10 @@ export default function Player() {
                 {hasNext ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); goToEpisode(1); }}
-                    className={cn(
-                      'inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-xs sm:text-sm transition-all duration-500',
-                      nearEnd && 'bg-primary/20 ring-2 ring-primary/60 shadow-glow scale-[1.04] text-foreground'
-                    )}
-                    aria-label="Next episode"
+                    className="inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-xs sm:text-sm"
                   >
-                    <span className="hidden xs:inline sm:inline">Next Episode</span>
-                    <span className="xs:hidden sm:hidden">Next</span>
+                    <span className="hidden sm:inline">Next Episode</span>
+                    <span className="sm:hidden">Next</span>
                     <SkipForward className="h-4 w-4" />
                   </button>
                 ) : <span />}
@@ -434,20 +666,28 @@ export default function Player() {
             </div>
           )}
 
-          {/* Progress bar */}
+          {/* Progress */}
           <div
             className="group relative h-1.5 bg-foreground/20 rounded-full cursor-pointer"
-            onClick={(e) => { e.stopPropagation(); seek(e); }}
+            onClick={handleSeekClick}
           >
-            <div className="absolute left-0 top-0 h-full bg-primary rounded-full shadow-glow" style={{ width: `${pct}%` }} />
+            <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
             <div
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-primary shadow-glow opacity-0 group-hover:opacity-100 transition-opacity"
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity"
               style={{ left: `${pct}%` }}
             />
           </div>
+
           <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
             <span>{fmtTime(position)}</span>
-            <span>{fmtTime(MOCK_DURATION)}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); }}
+              className="grid place-items-center h-7 w-7 rounded-full hover:bg-white/10"
+              aria-label={muted ? "Unmute" : "Mute"}
+            >
+              {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </button>
+            <span>{fmtTime(duration)}</span>
           </div>
         </div>
       </div>
@@ -460,86 +700,82 @@ export default function Player() {
             onClick={(e) => { e.stopPropagation(); setSettingsOpen(false); }}
           />
           <div
+            data-settings
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              'absolute z-40 rounded-2xl bg-black/55 backdrop-blur-2xl border border-white/10 shadow-glow-lg overflow-hidden',
-              'left-3 right-3 bottom-24 sm:left-auto sm:right-4 sm:bottom-auto sm:top-16 sm:w-80',
-              'animate-in fade-in slide-in-from-bottom-2 sm:slide-in-from-top-2 duration-200'
+              "absolute z-40 rounded-2xl bg-black/55 backdrop-blur-2xl border border-white/10 overflow-hidden shadow-xl",
+              "left-3 right-3 bottom-24 sm:left-auto sm:right-4 sm:bottom-auto sm:top-16 sm:w-80",
             )}
           >
-            {settingsView === 'root' ? (
+            {settingsView === "root" ? (
               <div className="py-2">
                 <SettingsRootRow
                   icon={Sliders}
                   label="Quality"
-                  value={quality}
-                  onClick={() => setSettingsView('quality')}
+                  value={sources.length === 0 ? "—" : qualityIdx === 0 ? `Auto (${sources[0]?.quality || "—"})` : sources[qualityIdx]?.quality || "—"}
+                  onClick={() => setSettingsView("quality")}
                 />
                 <SettingsRootRow
                   icon={SubtitlesIcon}
                   label="Subtitles"
-                  value={subtitle}
-                  onClick={() => setSettingsView('subtitle')}
-                />
-                <SettingsRootRow
-                  icon={Languages}
-                  label="Language"
-                  value={audio}
-                  onClick={() => setSettingsView('audio')}
+                  value={subtitleIdx < 0 ? "Off" : subtitles[subtitleIdx]?.lanName || subtitles[subtitleIdx]?.lan || "On"}
+                  onClick={() => setSettingsView("subtitle")}
                 />
                 <SettingsRootRow
                   icon={Gauge}
                   label="Speed"
                   value={`${speed}x`}
-                  onClick={() => setSettingsView('speed')}
+                  onClick={() => setSettingsView("speed")}
                 />
               </div>
             ) : (
               <div className="py-1">
                 <button
                   type="button"
-                  onClick={() => setSettingsView('root')}
+                  onClick={() => setSettingsView("root")}
                   className="flex items-center gap-2 w-full px-4 h-12 text-sm text-muted-foreground hover:text-foreground border-b border-white/5"
                 >
                   <ChevronLeft className="h-5 w-5" />
                   <span className="font-medium text-foreground">
-                    {settingsView === 'quality' && 'Quality'}
-                    {settingsView === 'subtitle' && 'Subtitles'}
-                    {settingsView === 'audio' && 'Language'}
-                    {settingsView === 'speed' && 'Speed'}
+                    {settingsView === "quality" && "Quality"}
+                    {settingsView === "subtitle" && "Subtitles"}
+                    {settingsView === "speed" && "Speed"}
                   </span>
                 </button>
                 <div className="py-1 max-h-[50vh] overflow-y-auto">
-                  {settingsView === 'quality' && QUALITIES.map((q) => (
+                  {settingsView === "quality" && sources.map((s, i) => (
                     <SettingsOptionRow
-                      key={q}
-                      label={q}
-                      active={quality === q}
-                      onClick={() => { setQuality(q); setSettingsView('root'); }}
+                      key={`${s.quality}-${i}`}
+                      label={i === 0 ? `Auto (${s.quality})` : s.quality}
+                      active={qualityIdx === i}
+                      onClick={() => { setQualityIdx(i); setSettingsView("root"); }}
                     />
                   ))}
-                  {settingsView === 'subtitle' && SUBTITLES.map((s) => (
-                    <SettingsOptionRow
-                      key={s}
-                      label={s}
-                      active={subtitle === s}
-                      onClick={() => { setSubtitle(s); setSettingsView('root'); }}
-                    />
-                  ))}
-                  {settingsView === 'audio' && AUDIOS.map((a) => (
-                    <SettingsOptionRow
-                      key={a}
-                      label={a}
-                      active={audio === a}
-                      onClick={() => { setAudio(a); setSettingsView('root'); }}
-                    />
-                  ))}
-                  {settingsView === 'speed' && SPEEDS.map((s) => (
+                  {settingsView === "quality" && sources.length === 0 && (
+                    <p className="px-4 py-3 text-sm text-muted-foreground">No qualities available</p>
+                  )}
+                  {settingsView === "subtitle" && (
+                    <>
+                      <SettingsOptionRow label="Off" active={subtitleIdx < 0} onClick={() => { setSubtitleIdx(-1); setSettingsView("root"); }} />
+                      {subtitles.map((s, i) => (
+                        <SettingsOptionRow
+                          key={`${s.lan}-${i}`}
+                          label={s.lanName || s.lan}
+                          active={subtitleIdx === i}
+                          onClick={() => { setSubtitleIdx(i); setSettingsView("root"); }}
+                        />
+                      ))}
+                      {subtitles.length === 0 && (
+                        <p className="px-4 py-3 text-sm text-muted-foreground">No subtitles available</p>
+                      )}
+                    </>
+                  )}
+                  {settingsView === "speed" && SPEEDS.map((s) => (
                     <SettingsOptionRow
                       key={s}
                       label={`${s}x`}
                       active={speed === s}
-                      onClick={() => { setSpeed(s); setSettingsView('root'); }}
+                      onClick={() => { setSpeed(s); setSettingsView("root"); }}
                     />
                   ))}
                 </div>
@@ -552,9 +788,9 @@ export default function Player() {
       {/* Auto-next overlay */}
       {autoNext != null && (
         <div className="absolute inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm">
-          <div className="rounded-2xl bg-background/40 backdrop-blur-xl border border-white/10 px-6 py-5 shadow-glow-lg text-center min-w-[260px]">
+          <div className="rounded-2xl bg-background/40 backdrop-blur-xl border border-white/10 px-6 py-5 text-center min-w-[260px]">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Up next</p>
-            <p className="font-display text-2xl mt-1">Episode {episode + 1}</p>
+            <p className="text-2xl mt-1 font-semibold">Episode {episode + 1}</p>
             <p className="text-sm text-muted-foreground mt-1">Starting in {autoNext}…</p>
             <div className="mt-4 flex items-center justify-center gap-2">
               <button
@@ -564,8 +800,8 @@ export default function Player() {
                 <X className="h-4 w-4" /> Cancel
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); cancelAutoNext(); navigate(`/watch/${mediaId}/${episode + 1}`, { state: { source, fresh: true } }); }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-sm shadow-glow"
+                onClick={(e) => { e.stopPropagation(); cancelAutoNext(); goToEpisode(1); }}
+                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-sm"
               >
                 <Play className="h-4 w-4 fill-current" /> Play now
               </button>
@@ -596,28 +832,20 @@ function SettingsRootRow({
     >
       <Icon className="h-5 w-5 text-foreground/90 shrink-0" />
       <span className="flex-1 text-sm font-medium text-foreground">{label}</span>
-      <span className="text-sm text-muted-foreground">{value}</span>
+      <span className="text-sm text-muted-foreground truncate max-w-[40%]">{value}</span>
       <ChevronRight className="h-4 w-4 text-muted-foreground" />
     </button>
   );
 }
 
-function SettingsOptionRow({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+function SettingsOptionRow({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-center justify-between w-full px-4 h-12 text-sm transition-colors',
-        active ? 'text-primary font-medium' : 'text-foreground hover:bg-white/5'
+        "flex items-center justify-between w-full px-4 h-12 text-sm transition-colors",
+        active ? "text-primary font-medium" : "text-foreground hover:bg-white/5",
       )}
     >
       <span>{label}</span>

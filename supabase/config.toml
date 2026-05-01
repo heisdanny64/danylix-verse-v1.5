@@ -1,1 +1,4 @@
 project_id = "fftnljlqpghdlwqrrgae"
+
+[functions.gifted-proxy]
+verify_jwt = false

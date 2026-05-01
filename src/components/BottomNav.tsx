@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, Sparkles, Library, Download, User } from "lucide-react";
+import { Home, Sparkles, Library, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const BottomNav = () => {
@@ -24,7 +24,6 @@ const BottomNav = () => {
     { to: "/", label: "Home", icon: Home },
     { to: "/recommendations", label: "Discover", icon: Sparkles },
     { to: "/library", label: "Library", icon: Library },
-    { to: "/downloads", label: "Downloads", icon: Download },
     { to: user ? "/profile" : "/auth", label: user ? "Me" : "Sign In", icon: User },
   ];
 
