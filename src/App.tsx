@@ -8,13 +8,12 @@ import BottomNav from "@/components/BottomNav";
 import Index from "./pages/Index.tsx";
 import SearchPage from "./pages/SearchPage.tsx";
 import DetailsPage from "./pages/DetailsPage.tsx";
-import PlayerPage from "./pages/PlayerPage.tsx";
+import Player from "./pages/Player.tsx";
 import CategoryPage from "./pages/CategoryPage.tsx";
 import RecommendationsPage from "./pages/RecommendationsPage.tsx";
 import LibraryPage from "./pages/LibraryPage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
-import DownloadsPage from "./pages/DownloadsPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -30,13 +29,12 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/details/:type/:id" element={<DetailsPage />} />
-            <Route path="/player/:type/:id" element={<PlayerPage />} />
+            <Route path="/player/:type/:id" element={<Player />} />
             <Route path="/category/:slug" element={<CategoryPage />} />
             <Route path="/recommendations" element={<RecommendationsPage />} />
             <Route path="/library" element={<LibraryPage />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/downloads" element={<DownloadsPage />} />
             {/* Legacy redirects */}
             <Route path="/movie/movie-:id" element={<LegacyMovieRedirect />} />
             <Route path="/series/:id" element={<LegacySeriesRedirect />} />
