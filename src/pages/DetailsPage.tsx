@@ -227,6 +227,7 @@ const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchli
   }
 
   const inWatchlist = isInWatchlist(anime.id, "anime");
+  const [animeDownloadOpen, setAnimeDownloadOpen] = useState(false);
 
   const { data: animeRecs } = useQuery({
     queryKey: ["anime-recs-merged", anime.id, anime.title],
@@ -313,7 +314,7 @@ const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchli
           <Button
             variant="outline"
             className="gap-1.5"
-            onClick={() => toast({ title: "Coming Soon", description: "Download feature is not yet available." })}
+            onClick={() => setAnimeDownloadOpen(true)}
           >
             <Download className="w-4 h-4" />
           </Button>
@@ -335,6 +336,17 @@ const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchli
           <MovieRow title="More Like This" movies={animeRecs} mediaType="anime" />
         </div>
       )}
+
+      <DownloadModal
+        open={animeDownloadOpen}
+        onClose={() => setAnimeDownloadOpen(false)}
+        type="anime"
+        externalId={anime.id}
+        title={anime.title}
+        year={anime.year}
+        season={1}
+        episode={1}
+      />
     </div>
   );
 };
