@@ -218,6 +218,14 @@ interface AnimeDetailsViewProps {
 }
 
 const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchlist }: AnimeDetailsViewProps) => {
+  const [animeDownloadOpen, setAnimeDownloadOpen] = useState(false);
+
+  const { data: animeRecs } = useQuery({
+    queryKey: ["anime-recs-merged", anime?.id, anime?.title],
+    queryFn: () => getAnimeRecommendationsFromTasteDive(anime!.title, anime!.id),
+    enabled: !!anime,
+  });
+
   if (!anime) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -227,12 +235,6 @@ const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchli
   }
 
   const inWatchlist = isInWatchlist(anime.id, "anime");
-  const [animeDownloadOpen, setAnimeDownloadOpen] = useState(false);
-
-  const { data: animeRecs } = useQuery({
-    queryKey: ["anime-recs-merged", anime.id, anime.title],
-    queryFn: () => getAnimeRecommendationsFromTasteDive(anime.title, anime.id),
-  });
 
   const handlePlayEpisode = (_season: number, episode: number) => {
     navigate(`/player/anime/${anime.id}?season=1&episode=${episode}`);
