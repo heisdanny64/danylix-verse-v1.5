@@ -345,7 +345,7 @@ export default function Player() {
       v.removeEventListener("error", onErr);
       v.removeEventListener("ended", onEnded);
     };
-  }, [advanceFallback, hasNext]);
+  }, [hasNext]);
 
   useEffect(() => {
     advanceFallbackRef.current = advanceFallback;
