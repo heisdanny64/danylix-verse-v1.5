@@ -599,7 +599,6 @@ export default function Player() {
   const hasFatal = noMatch || noSources || (sourcesError && !sources.length) || streamError;
 
   const epLabel = isMovie ? "" : `S${season} · E${episode}`;
-  const subTrackUrl = subtitleIdx >= 0 ? subtitles[subtitleIdx]?.url : "";
 
   return (
     <div
@@ -616,16 +615,16 @@ export default function Player() {
         preload="metadata"
         crossOrigin="anonymous"
       >
-        {subTrackUrl && (
+        {subtitles.map((s, i) => (
           <track
-            key={subTrackUrl}
+            key={`${s.lan}-${i}-${s.url}`}
             kind="subtitles"
-            src={subTrackUrl}
-            label={subtitles[subtitleIdx]?.lanName || "Subtitle"}
-            srcLang={subtitles[subtitleIdx]?.lan || "en"}
-            default
+            src={s.url}
+            label={s.lanName || s.lan || "Subtitle"}
+            srcLang={s.lan || "en"}
+            default={s.lan === "en" && i === subtitleIdx}
           />
-        )}
+        ))}
       </video>
 
       {/* Loading */}
