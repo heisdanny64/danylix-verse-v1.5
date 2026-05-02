@@ -18,6 +18,8 @@ export type Database = {
         Row: {
           content_id: string
           content_type: string
+          current_time_sec: number | null
+          duration_sec: number | null
           episode: number | null
           id: string
           last_channel: number | null
@@ -31,6 +33,8 @@ export type Database = {
         Insert: {
           content_id: string
           content_type: string
+          current_time_sec?: number | null
+          duration_sec?: number | null
           episode?: number | null
           id?: string
           last_channel?: number | null
@@ -44,6 +48,8 @@ export type Database = {
         Update: {
           content_id?: string
           content_type?: string
+          current_time_sec?: number | null
+          duration_sec?: number | null
           episode?: number | null
           id?: string
           last_channel?: number | null
@@ -113,6 +119,87 @@ export type Database = {
           id?: string
           name?: string
           username?: string
+        }
+        Relationships: []
+      }
+      search_history: {
+        Row: {
+          id: string
+          query: string
+          searched_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          query: string
+          searched_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          query?: string
+          searched_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_preferences: {
+        Row: {
+          autoplay_next: boolean
+          preferred_quality: string | null
+          preferred_subtitle_lang: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          autoplay_next?: boolean
+          preferred_quality?: string | null
+          preferred_subtitle_lang?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          autoplay_next?: boolean
+          preferred_quality?: string | null
+          preferred_subtitle_lang?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      watch_history: {
+        Row: {
+          content_id: string
+          content_type: string
+          episode: number | null
+          id: string
+          poster: string | null
+          season: number | null
+          title: string
+          user_id: string
+          watched_at: string
+        }
+        Insert: {
+          content_id: string
+          content_type: string
+          episode?: number | null
+          id?: string
+          poster?: string | null
+          season?: number | null
+          title: string
+          user_id: string
+          watched_at?: string
+        }
+        Update: {
+          content_id?: string
+          content_type?: string
+          episode?: number | null
+          id?: string
+          poster?: string | null
+          season?: number | null
+          title?: string
+          user_id?: string
+          watched_at?: string
         }
         Relationships: []
       }
