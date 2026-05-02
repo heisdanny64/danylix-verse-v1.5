@@ -68,8 +68,34 @@ Deno.serve(async (req) => {
       data = { raw: text };
     }
 
+    if (!upstream.ok) {
+      console.error(
+        "[gifted-proxy] upstream error",
+        JSON.stringify({
+          path: cleanPath,
+          status: upstream.status,
+          contentType: upstream.headers.get("content-type"),
+          bodyPreview: text.slice(0, 200),
+        }),
+      );
+      // Return 200 with structured error so client can read body and choose fallbacks.
+      const fallbackable = upstream.status >= 500 || upstream.status === 404;
+      return new Response(
+        JSON.stringify({
+          error: `upstream_${upstream.status}`,
+          status: upstream.status,
+          fallback: fallbackable,
+          upstream: data,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     return new Response(JSON.stringify(data), {
-      status: upstream.ok ? 200 : 502,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
