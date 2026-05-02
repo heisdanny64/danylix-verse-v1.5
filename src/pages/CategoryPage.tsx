@@ -1,11 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { CATEGORY_MAP, type TMDBMovie } from "@/lib/tmdb";
 import { getTrendingAnime, getPopularAnime, animeToCard } from "@/lib/anilist";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
+
+const MAX_ITEMS = 30;
+
+// Map category slugs to Discover genre chips
+const SLUG_TO_DISCOVER_GENRES: Record<string, string> = {
+  action: "action",
+  horror: "horror",
+  comedy: "comedy",
+  "romance-drama": "romance,drama",
+  animation: "animation",
+  "trending-anime": "anime",
+  "popular-anime": "anime",
+};
 
 // Anime category configs
 const ANIME_CATEGORIES: Record<string, { title: string; mediaType: "anime"; fetchFn: (page?: number) => Promise<TMDBMovie[]> }> = {
@@ -50,11 +63,13 @@ const CategoryPage = () => {
       setAllMovies((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
         const newItems = results.filter((m) => !existingIds.has(m.id));
-        return [...prev, ...newItems];
+        const merged = [...prev, ...newItems];
+        if (merged.length >= MAX_ITEMS) setHasMore(false);
+        return merged.slice(0, MAX_ITEMS);
       });
       return results;
     },
-    enabled: !!config,
+    enabled: !!config && hasMore,
   });
 
   // Infinite scroll via IntersectionObserver
@@ -86,6 +101,7 @@ const CategoryPage = () => {
   }
 
   const loadingFirstPage = isLoading && page === 1;
+  const discoverGenres = slug ? SLUG_TO_DISCOVER_GENRES[slug] : undefined;
 
   return (
     <div className="min-h-screen pb-24">
@@ -115,6 +131,24 @@ const CategoryPage = () => {
       {!loadingFirstPage && hasMore && (
         <div ref={sentinelRef} className="flex justify-center px-4 py-6">
           {isFetching && <Loader2 className="w-6 h-6 animate-spin text-primary" />}
+        </div>
+      )}
+
+      {!loadingFirstPage && !hasMore && allMovies.length > 0 && (
+        <div className="flex justify-center px-4 py-8">
+          <button
+            onClick={() =>
+              navigate(
+                discoverGenres
+                  ? `/recommendations?genres=${discoverGenres}`
+                  : "/recommendations",
+              )
+            }
+            className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            <Sparkles className="w-4 h-4" />
+            View More in Discover
+          </button>
         </div>
       )}
     </div>
