@@ -36,7 +36,6 @@ import {
   type GiftedSource,
   type GiftedSubtitle,
 } from "@/services/giftedApi";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
@@ -191,7 +190,6 @@ export default function Player() {
   const persistTimer = useRef<number | null>(null);
   const wasPlayingRef = useRef(false);
   const initialResumeAppliedRef = useRef(false);
-  const advanceFallbackRef = useRef<() => void>(() => {});
 
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -214,6 +212,30 @@ export default function Player() {
   // Resume position to apply on next loadedmetadata
   const resumeRef = useRef<number>(0);
 
+  // Advance through the fallback chain: direct -> proxy -> download -> next quality -> error
+  const advanceFallback = useCallback(() => {
+    setSourceTier((prev) => {
+      if (prev === 0 && directUrl) {
+        console.warn("[Player] Direct URL failed, falling back to proxy");
+        return 1;
+      }
+      if (prev <= 1 && downloadUrl) {
+        console.warn("[Player] Proxy failed, trying download_url as last source");
+        return 2;
+      }
+      // Try next quality if available
+      if (qualityIdx + 1 < sources.length) {
+        console.warn("[Player] All tiers failed, trying next quality");
+        setQualityIdx((i) => i + 1);
+        return directUrl ? 0 : 1;
+      }
+      console.error("[Player] All sources exhausted");
+      setStreamError(true);
+      setBufferLoading(false);
+      return prev;
+    });
+  }, [directUrl, downloadUrl, qualityIdx, sources.length]);
+
   // Load HLS / native source
   useEffect(() => {
     setStreamError(false);
@@ -221,7 +243,7 @@ export default function Player() {
     const video = videoRef.current;
     if (!video || !streamUrl) return;
 
-    // Diagnostic logs — required for debugging streaming issues
+    // Diagnostic logs
     console.log("[Player] Loading source", {
       tier: sourceTier,
       qualityIdx,
@@ -258,7 +280,7 @@ export default function Player() {
       hls.on(Hls.Events.ERROR, (_e, data) => {
         console.error("[Player] HLS error", { fatal: data.fatal, type: data.type, details: data.details });
         if (data.fatal) {
-          advanceFallbackRef.current();
+          advanceFallback();
         }
       });
       hls.loadSource(streamUrl);
@@ -278,50 +300,27 @@ export default function Player() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamUrl]);
-
-  // Advance through the fallback chain: direct -> proxy -> download -> next quality -> error
-  const advanceFallback = useCallback(() => {
-    setSourceTier((prev) => {
-      if (prev === 0 && directUrl) {
-        console.warn("[Player] Direct URL failed, falling back to proxy");
-        return 1;
-      }
-      if (prev <= 1 && downloadUrl) {
-        console.warn("[Player] Proxy failed, trying download_url as last source");
-        return 2;
-      }
-      // Try next quality if available
-      if (qualityIdx + 1 < sources.length) {
-        console.warn("[Player] All tiers failed, trying next quality");
-        setQualityIdx((i) => i + 1);
-        return directUrl ? 0 : 1;
-      }
-      console.error("[Player] All sources exhausted");
-      setStreamError(true);
-      setBufferLoading(false);
-      return prev;
-    });
-  }, [directUrl, downloadUrl, qualityIdx, sources.length]);
+  }, [streamUrl, advanceFallback]);
 
   // Video listeners
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPlay = () => {
+      setPlaying(true);
+      wasPlayingRef.current = true;
+    };
+    const onPause = () => {
+      setPlaying(false);
+      wasPlayingRef.current = false;
+    };
     const onTime = () => setPosition(v.currentTime);
     const onDur = () => setDuration(v.duration);
     const onWait = () => setBufferLoading(true);
     const onCanPlay = () => setBufferLoading(false);
     const onErr = () => {
-      const err = v.error;
-      console.error("[Player] VIDEO ERROR", {
-        code: err?.code,
-        message: err?.message,
-        currentSrc: v.currentSrc,
-      });
-      advanceFallbackRef.current();
+      console.error("[Player] Native video error", v.error);
+      advanceFallback();
     };
     const onEnded = () => {
       if (hasNext) setAutoNext(5);
@@ -345,56 +344,18 @@ export default function Player() {
       v.removeEventListener("error", onErr);
       v.removeEventListener("ended", onEnded);
     };
-  }, [hasNext]);
-
-  useEffect(() => {
-    advanceFallbackRef.current = advanceFallback;
-  }, [advanceFallback]);
+  }, [advanceFallback, hasNext]);
 
   // Speed
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = speed;
   }, [speed]);
 
-  // Quality switch: preserve position + play state
+  // Quality switch: preserve position
   useEffect(() => {
     resumeRef.current = position;
-    wasPlayingRef.current = playing;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qualityIdx, sourceTier]);
-
-  // Toggle subtitle track visibility without remounting <track> elements
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const tracks = v.textTracks;
-    for (let i = 0; i < tracks.length; i++) {
-      tracks[i].mode = i === subtitleIdx ? "showing" : "disabled";
-    }
-  }, [subtitleIdx, subtitles.length]);
-
-  // Seed resume position from cloud on first load (exact second)
-  useEffect(() => {
-    if (!user?.id || !numericId) return;
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from("continue_watching")
-        .select("current_time_sec, season, episode")
-        .eq("user_id", user.id)
-        .eq("content_id", String(numericId))
-        .eq("content_type", contentType)
-        .maybeSingle();
-      if (cancelled || !data) return;
-      // Only resume if we're on the same episode
-      if ((data.season ?? null) === (isMovie ? null : season) && (data.episode ?? null) === (isMovie ? null : episode)) {
-        if (data.current_time_sec && data.current_time_sec > 5) {
-          resumeRef.current = data.current_time_sec;
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [user?.id, numericId, contentType, season, episode, isMovie]);
+  }, [qualityIdx]);
 
   // Persist progress every 5s
   useEffect(() => {
@@ -402,568 +363,586 @@ export default function Player() {
     persistTimer.current = window.setInterval(() => {
       if (!duration || !position) return;
       const pct = Math.min(100, Math.round((position / duration) * 100));
-      // Persist exact second + duration to cloud (extra cols not in updateProgress yet)
-      if (user?.id) {
-        void supabase
-          .from("continue_watching")
-          .update({
-            current_time_sec: position,
-            duration_sec: duration,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", user.id)
-          .eq("content_id", String(numericId))
-          .eq("content_type", contentType);
-      }
       if (isAnime && animeDetails) {
         const m = {
           id: animeDetails.id,
           title: animeDetails.title,
           overview: animeDetails.description,
-          poster_path: animeDetails.poster,
-          backdrop_path: animeDetails.banner,
-          vote_average: animeDetails.rating,
-          release_date: animeDetails.year ? `${animeDetails.year}-01-01` : "",
-          genre_ids: [],
-          media_type: "anime",
-          _isAnimeCard: true,
-        } as any;
+          poster_path: animeDetails.coverImage?.large,
+          backdrop_path: animeDetails.bannerImage,
+          vote_average: (animeDetails.averageScore || 0) / 10,
+          release_date: animeDetails.startDate ? `${animeDetails.startDate.year}-01-01` : "",
+        };
         updateProgress(m, "anime", pct, 1, episode);
       } else if (tmdbDetails) {
-        const m = {
-          id: tmdbDetails.id,
-          title: tmdbDetails.title,
-          name: tmdbDetails.name,
-          overview: tmdbDetails.overview,
-          poster_path: tmdbDetails.poster_path,
-          backdrop_path: tmdbDetails.backdrop_path,
-          vote_average: tmdbDetails.vote_average,
-          release_date: tmdbDetails.release_date,
-          first_air_date: tmdbDetails.first_air_date,
-          genre_ids: tmdbDetails.genres.map((g: any) => g.id),
-          media_type: contentType,
-        } as any;
-        updateProgress(m, contentType as "movie" | "tv", pct, season, episode);
+        updateProgress(tmdbDetails as any, contentType as any, pct, season, episode);
       }
     }, 5000);
     return () => {
       if (persistTimer.current) window.clearInterval(persistTimer.current);
     };
-  }, [position, duration, isAnime, animeDetails, tmdbDetails, contentType, season, episode, updateProgress]);
+  }, [duration, position, isAnime, animeDetails, tmdbDetails, contentType, season, episode, updateProgress]);
 
-  // Fullscreen tracking
-  useEffect(() => {
-    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-
-  // Auto-next countdown
-  useEffect(() => {
-    if (autoNext == null) return;
-    if (autoNext <= 0) {
-      setAutoNext(null);
-      goToEpisode(1);
-      return;
-    }
-    autoNextTimer.current = window.setTimeout(() => setAutoNext((n) => (n != null ? n - 1 : null)), 1000);
-    return () => {
-      if (autoNextTimer.current) window.clearTimeout(autoNextTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoNext]);
-
-  const cancelAutoNext = useCallback(() => {
-    if (autoNextTimer.current) window.clearTimeout(autoNextTimer.current);
-    setAutoNext(null);
-  }, []);
-
-  // Esc closes settings
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setSettingsOpen(false);
-        setSettingsView("root");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [settingsOpen]);
-
-  useEffect(() => {
-    if (settingsOpen) setSettingsView("root");
-  }, [settingsOpen]);
-
-  // Auto-hide controls
-  const flashControls = useCallback(() => {
+  // Controls visibility
+  const triggerControls = useCallback(() => {
     setShowControls(true);
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => {
-      if (videoRef.current && !videoRef.current.paused) setShowControls(false);
+      if (playing && !settingsOpen) setShowControls(false);
     }, 3000);
-  }, []);
+  }, [playing, settingsOpen]);
 
-  useEffect(() => { flashControls(); }, [flashControls]);
+  useEffect(() => {
+    triggerControls();
+    return () => {
+      if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    };
+  }, [triggerControls]);
 
-  const togglePlay = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) v.play().catch(() => {});
-    else v.pause();
-  }, []);
-
-  const seekBy = useCallback((delta: number) => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + delta));
-  }, []);
-
-  const goToEpisode = useCallback((delta: 1 | -1) => {
-    const next = episode + delta;
-    cancelAutoNext();
-    if (isAnime) {
-      navigate(`/player/anime/${numericId}?season=1&episode=${next}`, { replace: true });
-    } else {
-      navigate(`/player/tv/${numericId}?season=${season}&episode=${next}`, { replace: true });
-    }
-  }, [episode, isAnime, navigate, numericId, season, cancelAutoNext]);
-
+  // Fullscreen
   const toggleFullscreen = useCallback(async () => {
-    const el = containerRef.current;
-    if (!el) return;
-    try {
-      if (!document.fullscreenElement) {
-        await el.requestFullscreen();
-        try { await (screen.orientation as any)?.lock?.("landscape"); } catch { /* noop */ }
-      } else {
-        try { (screen.orientation as any)?.unlock?.(); } catch { /* noop */ }
-        await document.exitFullscreen();
-      }
-    } catch { /* noop */ }
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      await containerRef.current.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      await document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
   }, []);
 
-  const handleBack = useCallback(() => {
-    navigate(-1);
-  }, [navigate]);
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
-  const handleTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-controls]") || target.closest("[data-settings]")) return;
-
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const clientX = "touches" in e ? (e as React.TouchEvent).changedTouches[0].clientX : (e as React.MouseEvent).clientX;
-    const relX = (clientX - rect.left) / rect.width;
-
-    tapCountRef.current += 1;
-    lastTapXRef.current = relX;
-    if (tapTimerRef.current) window.clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = window.setTimeout(() => {
-      const count = tapCountRef.current;
-      tapCountRef.current = 0;
-      if (count >= 2) {
-        if (lastTapXRef.current < 0.4) {
-          seekBy(-10);
-          setSeekIndicator({ side: "left", visible: true });
-        } else if (lastTapXRef.current > 0.6) {
-          seekBy(10);
-          setSeekIndicator({ side: "right", visible: true });
-        }
-        window.setTimeout(() => setSeekIndicator((s) => ({ ...s, visible: false })), 600);
-      } else {
-        setShowControls((p) => !p);
-        flashControls();
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === " ") {
+        e.preventDefault();
+        setPlaying((p) => !p);
+        triggerControls();
+      } else if (e.key === "f") {
+        toggleFullscreen();
+      } else if (e.key === "ArrowLeft") {
+        if (videoRef.current) videoRef.current.currentTime -= 10;
+        triggerControls();
+      } else if (e.key === "ArrowRight") {
+        if (videoRef.current) videoRef.current.currentTime += 10;
+        triggerControls();
+      } else if (e.key === "Escape" && settingsOpen) {
+        setSettingsOpen(false);
       }
-    }, 250);
-  }, [seekBy, flashControls]);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [toggleFullscreen, triggerControls, settingsOpen]);
 
-  const handleSeekClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    if (!duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = (e.clientX - rect.left) / rect.width;
-    const v = videoRef.current;
-    if (v) v.currentTime = Math.max(0, Math.min(duration, ratio * duration));
-    flashControls();
+  // Auto-next timer
+  useEffect(() => {
+    if (autoNext === null) return;
+    if (autoNext <= 0) {
+      navigate(`/player/${type}/${id}?season=${season}&episode=${episode + 1}`);
+      setAutoNext(null);
+      return;
+    }
+    autoNextTimer.current = window.setTimeout(() => {
+      setAutoNext((n) => (n !== null ? n - 1 : null));
+    }, 1000);
+    return () => {
+      if (autoNextTimer.current) window.clearTimeout(autoNextTimer.current);
+    };
+  }, [autoNext, navigate, type, id, season, episode]);
+
+  const handleSeek = (val: number[]) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = val[0];
+      setPosition(val[0]);
+    }
   };
 
-  if (!Number.isFinite(numericId)) {
-    return <div className="p-8">Invalid content.</div>;
+  const handleVolume = (val: number[]) => {
+    const v = val[0];
+    setVolume(v);
+    if (videoRef.current) {
+      videoRef.current.volume = v;
+      videoRef.current.muted = v === 0;
+    }
+    setMuted(v === 0);
+  };
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    if (videoRef.current) videoRef.current.muted = next;
+  };
+
+  const handleTap = (e: React.MouseEvent | React.TouchEvent) => {
+    const now = Date.now();
+    const x = "touches" in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const relativeX = x - rect.left;
+    const isSide = relativeX < rect.width * 0.3 || relativeX > rect.width * 0.7;
+
+    if (isSide && tapCountRef.current > 0 && now - (tapTimerRef.current || 0) < 300) {
+      // Double tap
+      tapCountRef.current = 0;
+      if (tapTimerRef.current) window.clearTimeout(tapTimerRef.current);
+      
+      if (relativeX < rect.width * 0.3) {
+        if (videoRef.current) videoRef.current.currentTime -= 10;
+        setSeekIndicator({ side: "left", visible: true });
+      } else {
+        if (videoRef.current) videoRef.current.currentTime += 10;
+        setSeekIndicator({ side: "right", visible: true });
+      }
+      setTimeout(() => setSeekIndicator((s) => ({ ...s, visible: false })), 600);
+    } else {
+      tapCountRef.current = 1;
+      tapTimerRef.current = window.setTimeout(() => {
+        tapCountRef.current = 0;
+        if (!settingsOpen) {
+          if (showControls) setShowControls(false);
+          else triggerControls();
+        }
+      }, 300);
+    }
+  };
+
+  if (matchingId || loadingSources) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-4 z-50">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+        <p className="text-white/60 animate-pulse text-sm font-medium">
+          {matchingId ? "Matching content..." : "Fetching sources..."}
+        </p>
+      </div>
+    );
   }
-
-  const pct = duration ? (position / duration) * 100 : 0;
-  const initialLoading = matchingId || loadingSources;
-  const noMatch = !matchingId && !subjectId && !!title;
-  const noSources = !!subjectId && !loadingSources && sources.length === 0;
-  const hasFatal = noMatch || noSources || (sourcesError && !sources.length) || streamError;
-
-  const epLabel = isMovie ? "" : `S${season} · E${episode}`;
 
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 bg-black text-foreground select-none"
-      onMouseMove={flashControls}
+      className={cn(
+        "fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none group",
+        isFullscreen ? "cursor-none" : "cursor-default",
+        showControls && "cursor-default"
+      )}
+      onMouseMove={triggerControls}
       onClick={handleTap}
-      onTouchEnd={handleTap}
     >
+      {/* Video Element */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-contain bg-black"
+        className="w-full h-full object-contain"
         playsInline
-        preload="metadata"
         crossOrigin="anonymous"
       >
-        {subtitles.map((s, i) => (
+        {subtitles[subtitleIdx] && (
           <track
-            key={`${s.lan}-${i}-${s.url}`}
             kind="subtitles"
-            src={s.url}
-            label={s.lanName || s.lan || "Subtitle"}
-            srcLang={s.lan || "en"}
-            default={s.lan === "en" && i === subtitleIdx}
+            src={subtitles[subtitleIdx].url}
+            srcLang={subtitles[subtitleIdx].lan}
+            label={subtitles[subtitleIdx].lanName}
+            default
           />
-        ))}
+        )}
       </video>
 
-      {/* Loading */}
-      {(initialLoading || bufferLoading) && !hasFatal && (
-        <div className="absolute inset-0 grid place-items-center pointer-events-none z-10">
+      {/* Buffering / Error Overlays */}
+      {bufferLoading && !streamError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
           <Loader2 className="w-12 h-12 text-primary animate-spin" />
         </div>
       )}
 
-      {/* Seek indicator */}
-      {seekIndicator.visible && (
-        <div
-          className={cn(
-            "absolute top-1/2 -translate-y-1/2 z-10 pointer-events-none",
-            seekIndicator.side === "left" ? "left-8" : "right-8",
-          )}
-        >
-          <div className="bg-background/70 backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium">
-            {seekIndicator.side === "left" ? "-10s" : "+10s"}
+      {streamError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-50 p-6 text-center">
+          <AlertCircle className="w-16 h-16 text-destructive mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">Playback Error</h2>
+          <p className="text-white/60 max-w-md mb-6">
+            We couldn't load the video stream. This might be due to a temporary server issue or an expired link.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="flex items-center gap-2 px-6 py-2 bg-primary text-primary-foreground rounded-full font-medium hover:opacity-90 transition-opacity"
+            >
+              <RefreshCw className="w-4 h-4" /> Retry
+            </button>
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2 px-6 py-2 bg-white/10 text-white rounded-full font-medium hover:bg-white/20 transition-colors"
+            >
+              Go Back
+            </button>
           </div>
         </div>
       )}
 
-      {/* Fatal error overlay */}
-      {hasFatal && (
-        <div className="absolute inset-0 z-30 grid place-items-center bg-black/80 backdrop-blur-sm px-6">
-          <div className="text-center max-w-sm space-y-4">
-            <AlertCircle className="w-12 h-12 mx-auto text-destructive" />
-            <p className="text-lg font-semibold">Content not available right now</p>
-            <p className="text-sm text-muted-foreground">
-              {noMatch
-                ? "We couldn't find this title in the streaming catalog."
-                : "No playable sources were returned."}
-            </p>
-            <div className="flex items-center justify-center gap-2">
-              <button
-                onClick={(e) => { e.stopPropagation(); setStreamError(false); refetchMatch(); refetchSources(); }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-sm"
-              >
-                <RefreshCw className="w-4 h-4" /> Retry
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleBack(); }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-sm"
-              >
-                Back
-              </button>
-            </div>
-          </div>
+      {/* Double Tap Seek Indicators */}
+      <div className={cn(
+        "absolute left-[15%] top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 transition-opacity duration-300 pointer-events-none",
+        seekIndicator.side === "left" && seekIndicator.visible ? "opacity-100" : "opacity-0"
+      )}>
+        <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
+          <Rewind className="w-8 h-8 text-white fill-white" />
         </div>
-      )}
+        <span className="text-white font-bold">10s</span>
+      </div>
+      <div className={cn(
+        "absolute right-[15%] top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 transition-opacity duration-300 pointer-events-none",
+        seekIndicator.side === "right" && seekIndicator.visible ? "opacity-100" : "opacity-0"
+      )}>
+        <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
+          <FastForward className="w-8 h-8 text-white fill-white" />
+        </div>
+        <span className="text-white font-bold">10s</span>
+      </div>
 
-      {/* Floating fullscreen button */}
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); toggleFullscreen(); flashControls(); }}
-        className={cn(
-          "absolute right-3 top-1/2 -translate-y-1/2 z-20 grid place-items-center h-10 w-10 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 transition-opacity",
-          showControls ? "opacity-100" : "opacity-0 pointer-events-none",
-        )}
-        aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-      >
-        <RotateCw className="h-5 w-5" />
-      </button>
-
-      {/* Controls overlay */}
-      <div
-        className={cn(
-          "absolute inset-0 flex flex-col transition-opacity duration-300 z-10",
-          showControls ? "opacity-100" : "opacity-0 pointer-events-none",
-        )}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent">
+      {/* Top Controls */}
+      <div className={cn(
+        "absolute top-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-b from-black/80 to-transparent transition-all duration-500 z-40",
+        showControls ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"
+      )}>
+        <div className="flex items-center gap-4">
           <button
-            onClick={(e) => { e.stopPropagation(); handleBack(); }}
-            className="grid place-items-center h-10 w-10 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
-            aria-label="Back"
+            onClick={(e) => { e.stopPropagation(); navigate(-1); }}
+            className="p-2 rounded-full hover:bg-white/10 text-white transition-colors"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="w-6 h-6" />
           </button>
-          <div className="text-center min-w-0 px-4">
-            <p className="text-xs text-muted-foreground truncate">{title}</p>
-            <p className="text-sm font-medium truncate">{isMovie ? "Movie" : epLabel}</p>
-          </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); setSettingsOpen((v) => !v); }}
-            className={cn(
-              "grid place-items-center h-10 w-10 rounded-full backdrop-blur-md transition-colors",
-              settingsOpen ? "bg-primary text-primary-foreground" : "bg-background/40 hover:bg-background/70",
+          <div className="flex flex-col">
+            <h1 className="text-white font-bold text-lg md:text-xl line-clamp-1">
+              {title}
+            </h1>
+            {!isMovie && (
+              <p className="text-white/60 text-sm font-medium">
+                S{season} : E{episode}
+              </p>
             )}
-            aria-label="Settings"
-          >
-            <Settings className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Center playback */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-6">
-          <div className="flex items-center justify-center gap-8">
-            <button
-              onClick={(e) => { e.stopPropagation(); seekBy(-10); }}
-              className="grid place-items-center h-12 w-12 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
-              aria-label="Rewind 10 seconds"
-            >
-              <Rewind className="h-6 w-6" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); togglePlay(); cancelAutoNext(); }}
-              className="grid place-items-center h-20 w-20 rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 transition-transform"
-              aria-label={playing ? "Pause" : "Play"}
-            >
-              {playing ? <Pause className="h-9 w-9 fill-current" /> : <Play className="h-9 w-9 fill-current ml-1" />}
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); seekBy(10); }}
-              className="grid place-items-center h-12 w-12 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
-              aria-label="Forward 10 seconds"
-            >
-              <FastForward className="h-6 w-6" />
-            </button>
-          </div>
-        </div>
-
-        {/* Bottom: episode nav + progress */}
-        <div data-controls className="p-4 pb-6 bg-gradient-to-t from-black/85 to-transparent">
-          {!isMovie && (
-            <div className="flex items-center justify-between mb-3 gap-2">
-              <div className="flex-1 flex justify-start">
-                {hasPrev ? (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); goToEpisode(-1); }}
-                    className="inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-xs sm:text-sm"
-                  >
-                    <SkipBack className="h-4 w-4" />
-                    <span className="hidden sm:inline">Previous Episode</span>
-                    <span className="sm:hidden">Prev</span>
-                  </button>
-                ) : <span />}
-              </div>
-              <div className="flex-1 flex justify-end">
-                {hasNext ? (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); goToEpisode(1); }}
-                    className="inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-xs sm:text-sm"
-                  >
-                    <span className="hidden sm:inline">Next Episode</span>
-                    <span className="sm:hidden">Next</span>
-                    <SkipForward className="h-4 w-4" />
-                  </button>
-                ) : <span />}
-              </div>
-            </div>
-          )}
-
-          {/* Progress */}
-          <div
-            className="group relative h-1.5 bg-foreground/20 rounded-full cursor-pointer"
-            onClick={handleSeekClick}
-          >
-            <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
-            <div
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ left: `${pct}%` }}
-            />
-          </div>
-
-          <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-            <span>{fmtTime(position)}</span>
-            <button
-              onClick={(e) => { e.stopPropagation(); const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); }}
-              className="grid place-items-center h-7 w-7 rounded-full hover:bg-white/10"
-              aria-label={muted ? "Unmute" : "Mute"}
-            >
-              {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-            </button>
-            <span>{fmtTime(duration)}</span>
           </div>
         </div>
       </div>
 
-      {/* Settings panel */}
-      {settingsOpen && (
-        <>
+      {/* Bottom Controls */}
+      <div className={cn(
+        "absolute bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-all duration-500 z-40",
+        showControls ? "translate-y-0 opacity-100" : "translate-y-full opacity-0"
+      )}>
+        {/* Progress Bar */}
+        <div className="group/progress relative w-full h-1.5 mb-6 cursor-pointer" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0 bg-white/20 rounded-full" />
           <div
-            className="absolute inset-0 z-30"
-            onClick={(e) => { e.stopPropagation(); setSettingsOpen(false); }}
+            className="absolute inset-y-0 left-0 bg-primary rounded-full"
+            style={{ width: `${(position / duration) * 100}%` }}
+          />
+          <input
+            type="range"
+            min={0}
+            max={duration || 0}
+            value={position}
+            onChange={(e) => handleSeek([parseFloat(e.target.value)])}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div
-            data-settings
-            onClick={(e) => e.stopPropagation()}
-            className={cn(
-              "absolute z-40 rounded-2xl bg-black/55 backdrop-blur-2xl border border-white/10 overflow-hidden shadow-xl",
-              "left-3 right-3 bottom-24 sm:left-auto sm:right-4 sm:bottom-auto sm:top-16 sm:w-80",
-            )}
-          >
-            {settingsView === "root" ? (
-              <div className="py-2">
-                <SettingsRootRow
-                  icon={Sliders}
-                  label="Quality"
-                  value={sources.length === 0 ? "—" : qualityIdx === 0 ? `Auto (${sources[0]?.quality || "—"})` : sources[qualityIdx]?.quality || "—"}
-                  onClick={() => setSettingsView("quality")}
+            className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg scale-0 group-hover/progress:scale-100 transition-transform"
+            style={{ left: `${(position / duration) * 100}%`, marginLeft: "-8px" }}
+          />
+          <div className="absolute -top-8 left-0 text-xs text-white/60 font-medium">
+            {fmtTime(position)}
+          </div>
+          <div className="absolute -top-8 right-0 text-xs text-white/60 font-medium">
+            {fmtTime(duration)}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-4" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2 md:gap-6">
+            <button
+              onClick={() => {
+                if (videoRef.current) videoRef.current.currentTime -= 10;
+              }}
+              className="p-2 text-white hover:text-primary transition-colors"
+            >
+              <Rewind className="w-6 h-6 md:w-7 md:h-7" />
+            </button>
+
+            <button
+              onClick={() => setPlaying(!playing)}
+              className="w-12 h-12 md:w-14 md:h-14 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 transition-transform"
+            >
+              {playing ? (
+                <Pause className="w-6 h-6 md:w-7 md:h-7 fill-current" />
+              ) : (
+                <Play className="w-6 h-6 md:w-7 md:h-7 fill-current ml-1" />
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                if (videoRef.current) videoRef.current.currentTime += 10;
+              }}
+              className="p-2 text-white hover:text-primary transition-colors"
+            >
+              <FastForward className="w-6 h-6 md:w-7 md:h-7" />
+            </button>
+
+            <div className="hidden md:flex items-center gap-4 ml-4 group/volume">
+              <button onClick={toggleMute} className="text-white hover:text-primary transition-colors">
+                {muted || volume === 0 ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+              </button>
+              <div className="w-24 h-1 relative bg-white/20 rounded-full overflow-hidden">
+                <div
+                  className="absolute inset-y-0 left-0 bg-white"
+                  style={{ width: `${volume * 100}%` }}
                 />
-                <SettingsRootRow
-                  icon={SubtitlesIcon}
-                  label="Subtitles"
-                  value={subtitleIdx < 0 ? "Off" : subtitles[subtitleIdx]?.lanName || subtitles[subtitleIdx]?.lan || "On"}
-                  onClick={() => setSettingsView("subtitle")}
-                />
-                <SettingsRootRow
-                  icon={Gauge}
-                  label="Speed"
-                  value={`${speed}x`}
-                  onClick={() => setSettingsView("speed")}
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  onChange={(e) => handleVolume([parseFloat(e.target.value)])}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
               </div>
-            ) : (
-              <div className="py-1">
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 md:gap-4">
+            {!isMovie && (
+              <>
                 <button
-                  type="button"
-                  onClick={() => setSettingsView("root")}
-                  className="flex items-center gap-2 w-full px-4 h-12 text-sm text-muted-foreground hover:text-foreground border-b border-white/5"
+                  disabled={!hasPrev}
+                  onClick={() => navigate(`/player/${type}/${id}?season=${season}&episode=${episode - 1}`)}
+                  className="p-2 text-white hover:text-primary disabled:opacity-30 disabled:hover:text-white transition-colors"
+                  title="Previous Episode"
                 >
-                  <ChevronLeft className="h-5 w-5" />
-                  <span className="font-medium text-foreground">
-                    {settingsView === "quality" && "Quality"}
-                    {settingsView === "subtitle" && "Subtitles"}
-                    {settingsView === "speed" && "Speed"}
-                  </span>
+                  <SkipBack className="w-6 h-6" />
                 </button>
-                <div className="py-1 max-h-[50vh] overflow-y-auto">
-                  {settingsView === "quality" && sources.map((s, i) => (
-                    <SettingsOptionRow
-                      key={`${s.quality}-${i}`}
-                      label={i === 0 ? `Auto (${s.quality})` : s.quality}
-                      active={qualityIdx === i}
-                      onClick={() => { setQualityIdx(i); setSettingsView("root"); }}
-                    />
-                  ))}
-                  {settingsView === "quality" && sources.length === 0 && (
-                    <p className="px-4 py-3 text-sm text-muted-foreground">No qualities available</p>
-                  )}
-                  {settingsView === "subtitle" && (
-                    <>
-                      <SettingsOptionRow label="Off" active={subtitleIdx < 0} onClick={() => { setSubtitleIdx(-1); setSettingsView("root"); }} />
-                      {subtitles.map((s, i) => (
-                        <SettingsOptionRow
-                          key={`${s.lan}-${i}`}
-                          label={s.lanName || s.lan}
-                          active={subtitleIdx === i}
-                          onClick={() => { setSubtitleIdx(i); setSettingsView("root"); }}
-                        />
-                      ))}
-                      {subtitles.length === 0 && (
-                        <p className="px-4 py-3 text-sm text-muted-foreground">No subtitles available</p>
-                      )}
-                    </>
-                  )}
-                  {settingsView === "speed" && SPEEDS.map((s) => (
-                    <SettingsOptionRow
-                      key={s}
-                      label={`${s}x`}
-                      active={speed === s}
-                      onClick={() => { setSpeed(s); setSettingsView("root"); }}
-                    />
+                <button
+                  disabled={!hasNext}
+                  onClick={() => navigate(`/player/${type}/${id}?season=${season}&episode=${episode + 1}`)}
+                  className="p-2 text-white hover:text-primary disabled:opacity-30 disabled:hover:text-white transition-colors"
+                  title="Next Episode"
+                >
+                  <SkipForward className="w-6 h-6" />
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={() => {
+                setSettingsView("root");
+                setSettingsOpen(!settingsOpen);
+              }}
+              className={cn(
+                "p-2 text-white hover:text-primary transition-all",
+                settingsOpen && "rotate-90 text-primary"
+              )}
+            >
+              <Settings className="w-6 h-6" />
+            </button>
+
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 text-white hover:text-primary transition-colors"
+            >
+              {isFullscreen ? (
+                <X className="w-6 h-6" />
+              ) : (
+                <Sliders className="w-6 h-6" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Settings Menu */}
+      {settingsOpen && (
+        <div
+          className="absolute right-4 md:right-8 bottom-24 md:bottom-32 w-64 bg-black/95 border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-4 duration-300"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-2">
+            {settingsView === "root" && (
+              <div className="flex flex-col">
+                <button
+                  onClick={() => setSettingsView("quality")}
+                  className="flex items-center justify-between p-3 rounded-xl hover:bg-white/10 text-white transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Sliders className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium">Quality</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-white/40">
+                      {activeSource?.quality || "Auto"}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-white/20" />
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setSettingsView("subtitle")}
+                  className="flex items-center justify-between p-3 rounded-xl hover:bg-white/10 text-white transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <SubtitlesIcon className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium">Subtitles</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-white/40">
+                      {subtitleIdx === -1 ? "Off" : subtitles[subtitleIdx]?.lanName}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-white/20" />
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setSettingsView("speed")}
+                  className="flex items-center justify-between p-3 rounded-xl hover:bg-white/10 text-white transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Gauge className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium">Speed</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-white/40">{speed}x</span>
+                    <ChevronRight className="w-4 h-4 text-white/20" />
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {settingsView === "quality" && (
+              <div className="flex flex-col">
+                <button
+                  onClick={() => setSettingsView("root")}
+                  className="flex items-center gap-3 p-3 text-white/60 hover:text-white transition-colors mb-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Quality</span>
+                </button>
+                <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                  {sources.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setQualityIdx(i);
+                        setSettingsOpen(false);
+                      }}
+                      className="flex items-center justify-between w-full p-3 rounded-xl hover:bg-white/10 text-white transition-colors"
+                    >
+                      <span className={cn("text-sm", qualityIdx === i ? "text-primary font-bold" : "font-medium")}>
+                        {s.quality}
+                      </span>
+                      {qualityIdx === i && <Check className="w-4 h-4 text-primary" />}
+                    </button>
                   ))}
                 </div>
               </div>
             )}
+
+            {settingsView === "subtitle" && (
+              <div className="flex flex-col">
+                <button
+                  onClick={() => setSettingsView("root")}
+                  className="flex items-center gap-3 p-3 text-white/60 hover:text-white transition-colors mb-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Subtitles</span>
+                </button>
+                <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                  <button
+                    onClick={() => {
+                      setSubtitleIdx(-1);
+                      setSettingsOpen(false);
+                    }}
+                    className="flex items-center justify-between w-full p-3 rounded-xl hover:bg-white/10 text-white transition-colors"
+                  >
+                    <span className={cn("text-sm", subtitleIdx === -1 ? "text-primary font-bold" : "font-medium")}>
+                      Off
+                    </span>
+                    {subtitleIdx === -1 && <Check className="w-4 h-4 text-primary" />}
+                  </button>
+                  {subtitles.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setSubtitleIdx(i);
+                        setSettingsOpen(false);
+                      }}
+                      className="flex items-center justify-between w-full p-3 rounded-xl hover:bg-white/10 text-white transition-colors"
+                    >
+                      <span className={cn("text-sm", subtitleIdx === i ? "text-primary font-bold" : "font-medium")}>
+                        {s.lanName}
+                      </span>
+                      {subtitleIdx === i && <Check className="w-4 h-4 text-primary" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {settingsView === "speed" && (
+              <div className="flex flex-col">
+                <button
+                  onClick={() => setSettingsView("root")}
+                  className="flex items-center gap-3 p-3 text-white/60 hover:text-white transition-colors mb-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Playback Speed</span>
+                </button>
+                {SPEEDS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setSpeed(s);
+                      setSettingsOpen(false);
+                    }}
+                    className="flex items-center justify-between w-full p-3 rounded-xl hover:bg-white/10 text-white transition-colors"
+                  >
+                    <span className={cn("text-sm", speed === s ? "text-primary font-bold" : "font-medium")}>
+                      {s}x
+                    </span>
+                    {speed === s && <Check className="w-4 h-4 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        </>
+        </div>
       )}
 
-      {/* Auto-next overlay */}
-      {autoNext != null && (
-        <div className="absolute inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm">
-          <div className="rounded-2xl bg-background/40 backdrop-blur-xl border border-white/10 px-6 py-5 text-center min-w-[260px]">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Up next</p>
-            <p className="text-2xl mt-1 font-semibold">Episode {episode + 1}</p>
-            <p className="text-sm text-muted-foreground mt-1">Starting in {autoNext}…</p>
-            <div className="mt-4 flex items-center justify-center gap-2">
+      {/* Auto-next Overlay */}
+      {autoNext !== null && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-[60] animate-in fade-in duration-500">
+          <div className="flex flex-col items-center text-center p-8">
+            <span className="text-primary font-bold uppercase tracking-[0.2em] mb-2">Next Episode In</span>
+            <span className="text-7xl md:text-8xl font-black text-white mb-8">{autoNext}</span>
+            <div className="flex gap-4">
               <button
-                onClick={(e) => { e.stopPropagation(); cancelAutoNext(); }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-background/60 hover:bg-background/80 text-sm"
+                onClick={() => setAutoNext(null)}
+                className="px-8 py-3 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition-colors"
               >
-                <X className="h-4 w-4" /> Cancel
+                Cancel
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); cancelAutoNext(); goToEpisode(1); }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-sm"
+                onClick={() => navigate(`/player/${type}/${id}?season=${season}&episode=${episode + 1}`)}
+                className="px-8 py-3 rounded-full bg-primary text-primary-foreground font-bold hover:opacity-90 transition-opacity"
               >
-                <Play className="h-4 w-4 fill-current" /> Play now
+                Play Now
               </button>
             </div>
           </div>
         </div>
       )}
     </div>
-  );
-}
-
-function SettingsRootRow({
-  icon: Icon,
-  label,
-  value,
-  onClick,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-4 w-full px-4 h-14 hover:bg-white/5 transition-colors text-left"
-    >
-      <Icon className="h-5 w-5 text-foreground/90 shrink-0" />
-      <span className="flex-1 text-sm font-medium text-foreground">{label}</span>
-      <span className="text-sm text-muted-foreground truncate max-w-[40%]">{value}</span>
-      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-    </button>
-  );
-}
-
-function SettingsOptionRow({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center justify-between w-full px-4 h-12 text-sm transition-colors",
-        active ? "text-primary font-medium" : "text-foreground hover:bg-white/5",
-      )}
-    >
-      <span>{label}</span>
-      {active && <Check className="h-4 w-4" />}
-    </button>
   );
 }
