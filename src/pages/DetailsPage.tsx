@@ -346,8 +346,7 @@ const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchli
         externalId={anime.id}
         title={anime.title}
         year={anime.year}
-        season={1}
-        episode={1}
+        totalEpisodes={anime.episodes}
       />
     </div>
   );

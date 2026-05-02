@@ -248,5 +248,24 @@ export function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return "—";
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
-  return `${mb.toFixed(0)} MB`;
+  return `${mb.toFixed(2)} MB`;
+}
+
+/**
+ * If a stream URL points to a redirect/proxy with an `?url=` param that
+ * itself is the actual playable file, return the decoded direct URL.
+ * Otherwise return null.
+ */
+export function extractDirectUrl(streamUrl: string): string | null {
+  try {
+    const u = new URL(streamUrl);
+    const inner = u.searchParams.get("url");
+    if (!inner) return null;
+    const decoded = decodeURIComponent(inner);
+    // Sanity check: must look like an absolute http(s) URL
+    if (!/^https?:\/\//i.test(decoded)) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
 }

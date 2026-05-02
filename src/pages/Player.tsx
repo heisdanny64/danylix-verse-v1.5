@@ -32,9 +32,12 @@ import {
   findBestMatch,
   getGiftedSources,
   resolveAnimeEpisode,
+  extractDirectUrl,
   type GiftedSource,
   type GiftedSubtitle,
 } from "@/services/giftedApi";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
 type SettingsView = "root" | "quality" | "subtitle" | "speed";
@@ -59,6 +62,7 @@ export default function Player() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { updateProgress } = useLibrary();
+  const { user } = useAuth();
 
   const contentType = (type as "movie" | "tv" | "anime") || "movie";
   const isAnime = contentType === "anime";
@@ -150,6 +154,8 @@ export default function Player() {
   const [qualityIdx, setQualityIdx] = useState<number>(0); // 0 = highest = "Auto"
   const [subtitleIdx, setSubtitleIdx] = useState<number>(-1); // -1 = Off
   const [speed, setSpeed] = useState<number>(1.0);
+  // Source-fallback chain: 0 = direct (decoded ?url=), 1 = proxy stream_url, 2 = download_url
+  const [sourceTier, setSourceTier] = useState<0 | 1 | 2>(0);
 
   // Reset selections when sources change
   useEffect(() => {
@@ -158,7 +164,21 @@ export default function Player() {
   }, [subjectId, sourceEpisode]);
 
   const activeSource = sources[qualityIdx] || sources[0];
-  const streamUrl = activeSource?.stream_url || "";
+  const proxyUrl = activeSource?.stream_url || "";
+  const directUrl = useMemo(() => (proxyUrl ? extractDirectUrl(proxyUrl) : null), [proxyUrl]);
+  const downloadUrl = activeSource?.download_url || "";
+
+  const streamUrl =
+    sourceTier === 0 && directUrl
+      ? directUrl
+      : sourceTier === 2 && downloadUrl
+        ? downloadUrl
+        : proxyUrl;
+
+  // Reset tier when sources change
+  useEffect(() => {
+    setSourceTier(directUrl ? 0 : 1);
+  }, [directUrl, qualityIdx, subjectId]);
 
   // Player state
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -169,6 +189,9 @@ export default function Player() {
   const tapCountRef = useRef(0);
   const lastTapXRef = useRef(0);
   const persistTimer = useRef<number | null>(null);
+  const wasPlayingRef = useRef(false);
+  const initialResumeAppliedRef = useRef(false);
+  const advanceFallbackRef = useRef<() => void>(() => {});
 
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -198,6 +221,16 @@ export default function Player() {
     const video = videoRef.current;
     if (!video || !streamUrl) return;
 
+    // Diagnostic logs — required for debugging streaming issues
+    console.log("[Player] Loading source", {
+      tier: sourceTier,
+      qualityIdx,
+      quality: activeSource?.quality,
+      streamUrl,
+      hasDirect: !!directUrl,
+      hasDownload: !!downloadUrl,
+    });
+
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
@@ -211,7 +244,11 @@ export default function Player() {
         try { video.currentTime = resumeRef.current; } catch { /* noop */ }
         resumeRef.current = 0;
       }
-      video.play().catch(() => { /* autoplay blocked */ });
+      // Honor previous play-state when swapping sources
+      if (wasPlayingRef.current || !initialResumeAppliedRef.current) {
+        video.play().catch(() => { /* autoplay blocked */ });
+      }
+      initialResumeAppliedRef.current = true;
     };
 
     if (isM3u8 && Hls.isSupported()) {
@@ -219,20 +256,18 @@ export default function Player() {
       hlsRef.current = hls;
       hls.on(Hls.Events.MANIFEST_PARSED, handleReady);
       hls.on(Hls.Events.ERROR, (_e, data) => {
+        console.error("[Player] HLS error", { fatal: data.fatal, type: data.type, details: data.details });
         if (data.fatal) {
-          // Try next quality
-          if (qualityIdx + 1 < sources.length) {
-            setQualityIdx((i) => i + 1);
-          } else {
-            setStreamError(true);
-            setBufferLoading(false);
-          }
+          advanceFallbackRef.current();
         }
       });
       hls.loadSource(streamUrl);
       hls.attachMedia(video);
     } else {
+      // Native MP4 / direct URL — set explicit type hint and load
       video.src = streamUrl;
+      video.setAttribute("type", "video/mp4");
+      try { video.load(); } catch { /* noop */ }
       video.addEventListener("loadedmetadata", handleReady, { once: true });
     }
 
@@ -245,6 +280,30 @@ export default function Player() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamUrl]);
 
+  // Advance through the fallback chain: direct -> proxy -> download -> next quality -> error
+  const advanceFallback = useCallback(() => {
+    setSourceTier((prev) => {
+      if (prev === 0 && directUrl) {
+        console.warn("[Player] Direct URL failed, falling back to proxy");
+        return 1;
+      }
+      if (prev <= 1 && downloadUrl) {
+        console.warn("[Player] Proxy failed, trying download_url as last source");
+        return 2;
+      }
+      // Try next quality if available
+      if (qualityIdx + 1 < sources.length) {
+        console.warn("[Player] All tiers failed, trying next quality");
+        setQualityIdx((i) => i + 1);
+        return directUrl ? 0 : 1;
+      }
+      console.error("[Player] All sources exhausted");
+      setStreamError(true);
+      setBufferLoading(false);
+      return prev;
+    });
+  }, [directUrl, downloadUrl, qualityIdx, sources.length]);
+
   // Video listeners
   useEffect(() => {
     const v = videoRef.current;
@@ -256,8 +315,13 @@ export default function Player() {
     const onWait = () => setBufferLoading(true);
     const onCanPlay = () => setBufferLoading(false);
     const onErr = () => {
-      if (qualityIdx + 1 < sources.length) setQualityIdx((i) => i + 1);
-      else setStreamError(true);
+      const err = v.error;
+      console.error("[Player] VIDEO ERROR", {
+        code: err?.code,
+        message: err?.message,
+        currentSrc: v.currentSrc,
+      });
+      advanceFallbackRef.current();
     };
     const onEnded = () => {
       if (hasNext) setAutoNext(5);
@@ -281,18 +345,56 @@ export default function Player() {
       v.removeEventListener("error", onErr);
       v.removeEventListener("ended", onEnded);
     };
-  }, [qualityIdx, sources.length, hasNext]);
+  }, [hasNext]);
+
+  useEffect(() => {
+    advanceFallbackRef.current = advanceFallback;
+  }, [advanceFallback]);
 
   // Speed
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = speed;
   }, [speed]);
 
-  // Quality switch: preserve position
+  // Quality switch: preserve position + play state
   useEffect(() => {
     resumeRef.current = position;
+    wasPlayingRef.current = playing;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qualityIdx]);
+  }, [qualityIdx, sourceTier]);
+
+  // Toggle subtitle track visibility without remounting <track> elements
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const tracks = v.textTracks;
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].mode = i === subtitleIdx ? "showing" : "disabled";
+    }
+  }, [subtitleIdx, subtitles.length]);
+
+  // Seed resume position from cloud on first load (exact second)
+  useEffect(() => {
+    if (!user?.id || !numericId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("continue_watching")
+        .select("current_time_sec, season, episode")
+        .eq("user_id", user.id)
+        .eq("content_id", String(numericId))
+        .eq("content_type", contentType)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      // Only resume if we're on the same episode
+      if ((data.season ?? null) === (isMovie ? null : season) && (data.episode ?? null) === (isMovie ? null : episode)) {
+        if (data.current_time_sec && data.current_time_sec > 5) {
+          resumeRef.current = data.current_time_sec;
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id, numericId, contentType, season, episode, isMovie]);
 
   // Persist progress every 5s
   useEffect(() => {
@@ -300,6 +402,19 @@ export default function Player() {
     persistTimer.current = window.setInterval(() => {
       if (!duration || !position) return;
       const pct = Math.min(100, Math.round((position / duration) * 100));
+      // Persist exact second + duration to cloud (extra cols not in updateProgress yet)
+      if (user?.id) {
+        void supabase
+          .from("continue_watching")
+          .update({
+            current_time_sec: position,
+            duration_sec: duration,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", user.id)
+          .eq("content_id", String(numericId))
+          .eq("content_type", contentType);
+      }
       if (isAnime && animeDetails) {
         const m = {
           id: animeDetails.id,
@@ -484,7 +599,6 @@ export default function Player() {
   const hasFatal = noMatch || noSources || (sourcesError && !sources.length) || streamError;
 
   const epLabel = isMovie ? "" : `S${season} · E${episode}`;
-  const subTrackUrl = subtitleIdx >= 0 ? subtitles[subtitleIdx]?.url : "";
 
   return (
     <div
@@ -501,16 +615,16 @@ export default function Player() {
         preload="metadata"
         crossOrigin="anonymous"
       >
-        {subTrackUrl && (
+        {subtitles.map((s, i) => (
           <track
-            key={subTrackUrl}
+            key={`${s.lan}-${i}-${s.url}`}
             kind="subtitles"
-            src={subTrackUrl}
-            label={subtitles[subtitleIdx]?.lanName || "Subtitle"}
-            srcLang={subtitles[subtitleIdx]?.lan || "en"}
-            default
+            src={s.url}
+            label={s.lanName || s.lan || "Subtitle"}
+            srcLang={s.lan || "en"}
+            default={s.lan === "en" && i === subtitleIdx}
           />
-        )}
+        ))}
       </video>
 
       {/* Loading */}

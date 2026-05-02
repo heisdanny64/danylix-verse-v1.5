@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -6,6 +6,8 @@ import { searchTMDB } from "@/lib/tmdb";
 import { searchAniList, animeToCard } from "@/lib/anilist";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 type FilterType = "all" | "movie" | "tv" | "anime";
 
@@ -24,6 +26,18 @@ const SearchPage = () => {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
+  const { user } = useAuth();
+
+  // Persist meaningful searches to history (debounced + only when results are likely)
+  useEffect(() => {
+    if (!user?.id) return;
+    const trimmed = query.trim();
+    if (trimmed.length < 3) return;
+    const t = window.setTimeout(() => {
+      void supabase.from("search_history").insert({ user_id: user.id, query: trimmed });
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [query, user?.id]);
 
   const { data: tmdbResults, isLoading: tmdbLoading } = useQuery({
     queryKey: ["search-tmdb", query],
