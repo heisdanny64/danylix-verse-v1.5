@@ -191,6 +191,7 @@ export default function Player() {
   const persistTimer = useRef<number | null>(null);
   const wasPlayingRef = useRef(false);
   const initialResumeAppliedRef = useRef(false);
+  const advanceFallbackRef = useRef<() => void>(() => {});
 
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -257,7 +258,7 @@ export default function Player() {
       hls.on(Hls.Events.ERROR, (_e, data) => {
         console.error("[Player] HLS error", { fatal: data.fatal, type: data.type, details: data.details });
         if (data.fatal) {
-          advanceFallback();
+          advanceFallbackRef.current();
         }
       });
       hls.loadSource(streamUrl);
@@ -320,7 +321,7 @@ export default function Player() {
         message: err?.message,
         currentSrc: v.currentSrc,
       });
-      advanceFallback();
+      advanceFallbackRef.current();
     };
     const onEnded = () => {
       if (hasNext) setAutoNext(5);
@@ -345,6 +346,10 @@ export default function Player() {
       v.removeEventListener("ended", onEnded);
     };
   }, [advanceFallback, hasNext]);
+
+  useEffect(() => {
+    advanceFallbackRef.current = advanceFallback;
+  }, [advanceFallback]);
 
   // Speed
   useEffect(() => {
