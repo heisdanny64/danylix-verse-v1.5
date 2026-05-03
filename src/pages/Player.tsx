@@ -32,7 +32,6 @@ import {
   findBestMatch,
   getGiftedSources,
   resolveAnimeEpisode,
-  extractDirectUrl,
   type GiftedSource,
   type GiftedSubtitle,
 } from "@/services/giftedApi";
@@ -154,8 +153,6 @@ export default function Player() {
   const [qualityIdx, setQualityIdx] = useState<number>(0); // 0 = highest = "Auto"
   const [subtitleIdx, setSubtitleIdx] = useState<number>(-1); // -1 = Off
   const [speed, setSpeed] = useState<number>(1.0);
-  // Source-fallback chain: 0 = direct (decoded ?url=), 1 = proxy stream_url, 2 = download_url
-  const [sourceTier, setSourceTier] = useState<0 | 1 | 2>(0);
 
   // Reset selections when sources change
   useEffect(() => {
@@ -164,21 +161,8 @@ export default function Player() {
   }, [subjectId, sourceEpisode]);
 
   const activeSource = sources[qualityIdx] || sources[0];
-  const proxyUrl = activeSource?.stream_url || "";
-  const directUrl = useMemo(() => (proxyUrl ? extractDirectUrl(proxyUrl) : null), [proxyUrl]);
-  const downloadUrl = activeSource?.download_url || "";
-
-  const streamUrl =
-    sourceTier === 0 && directUrl
-      ? directUrl
-      : sourceTier === 2 && downloadUrl
-        ? downloadUrl
-        : proxyUrl;
-
-  // Reset tier when sources change
-  useEffect(() => {
-    setSourceTier(directUrl ? 0 : 1);
-  }, [directUrl, qualityIdx, subjectId]);
+  // Use the Gifted API stream URL exactly as returned — no decoding, no rewriting.
+  const streamUrl = activeSource?.stream_url || "";
 
   // Player state
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -191,7 +175,7 @@ export default function Player() {
   const persistTimer = useRef<number | null>(null);
   const wasPlayingRef = useRef(false);
   const initialResumeAppliedRef = useRef(false);
-  const advanceFallbackRef = useRef<() => void>(() => {});
+  const tryNextQualityRef = useRef<() => void>(() => {});
 
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -223,12 +207,9 @@ export default function Player() {
 
     // Diagnostic logs — required for debugging streaming issues
     console.log("[Player] Loading source", {
-      tier: sourceTier,
       qualityIdx,
       quality: activeSource?.quality,
       streamUrl,
-      hasDirect: !!directUrl,
-      hasDownload: !!downloadUrl,
     });
 
     if (hlsRef.current) {
@@ -258,7 +239,7 @@ export default function Player() {
       hls.on(Hls.Events.ERROR, (_e, data) => {
         console.error("[Player] HLS error", { fatal: data.fatal, type: data.type, details: data.details });
         if (data.fatal) {
-          advanceFallbackRef.current();
+          tryNextQualityRef.current();
         }
       });
       hls.loadSource(streamUrl);
@@ -280,29 +261,17 @@ export default function Player() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamUrl]);
 
-  // Advance through the fallback chain: direct -> proxy -> download -> next quality -> error
-  const advanceFallback = useCallback(() => {
-    setSourceTier((prev) => {
-      if (prev === 0 && directUrl) {
-        console.warn("[Player] Direct URL failed, falling back to proxy");
-        return 1;
-      }
-      if (prev <= 1 && downloadUrl) {
-        console.warn("[Player] Proxy failed, trying download_url as last source");
-        return 2;
-      }
-      // Try next quality if available
-      if (qualityIdx + 1 < sources.length) {
-        console.warn("[Player] All tiers failed, trying next quality");
-        setQualityIdx((i) => i + 1);
-        return directUrl ? 0 : 1;
-      }
-      console.error("[Player] All sources exhausted");
-      setStreamError(true);
-      setBufferLoading(false);
-      return prev;
-    });
-  }, [directUrl, downloadUrl, qualityIdx, sources.length]);
+  // On stream failure: try the next available quality. Never modify the URL.
+  const tryNextQuality = useCallback(() => {
+    if (qualityIdx + 1 < sources.length) {
+      console.warn("[Player] LIKELY CAUSE: stream failed, trying next quality");
+      setQualityIdx((i) => i + 1);
+      return;
+    }
+    console.error("[Player] LIKELY CAUSE: all qualities failed for this source");
+    setStreamError(true);
+    setBufferLoading(false);
+  }, [qualityIdx, sources.length]);
 
   // Video listeners
   useEffect(() => {
@@ -321,7 +290,7 @@ export default function Player() {
         message: err?.message,
         currentSrc: v.currentSrc,
       });
-      advanceFallbackRef.current();
+      tryNextQualityRef.current();
     };
     const onEnded = () => {
       if (hasNext) setAutoNext(5);
@@ -348,8 +317,8 @@ export default function Player() {
   }, [hasNext]);
 
   useEffect(() => {
-    advanceFallbackRef.current = advanceFallback;
-  }, [advanceFallback]);
+    tryNextQualityRef.current = tryNextQuality;
+  }, [tryNextQuality]);
 
   // Speed
   useEffect(() => {
@@ -361,7 +330,7 @@ export default function Player() {
     resumeRef.current = position;
     wasPlayingRef.current = playing;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qualityIdx, sourceTier]);
+  }, [qualityIdx]);
 
   // Toggle subtitle track visibility without remounting <track> elements
   useEffect(() => {
