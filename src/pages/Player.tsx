@@ -666,7 +666,8 @@ export default function Player() {
     return <div className="p-8">Invalid content.</div>;
   }
 
-  const pct = duration ? (position / duration) * 100 : 0;
+  const displayTime = isSeeking ? seekPreview : position;
+  const pct = duration ? (displayTime / duration) * 100 : 0;
   const initialLoading = matchingId || loadingSources;
   const noMatch = !matchingId && !subjectId && !!title;
   const noSources = !!subjectId && !loadingSources && sources.length === 0;
@@ -679,8 +680,7 @@ export default function Player() {
       ref={containerRef}
       className="fixed inset-0 bg-black text-foreground select-none"
       onMouseMove={flashControls}
-      onClick={handleTap}
-      onTouchEnd={handleTap}
+      onClick={handleSurfaceClick}
     >
       {/*
         FIX: Removed crossOrigin="anonymous". The Gifted API returns a proxy
@@ -698,12 +698,11 @@ export default function Player() {
       >
         {subtitles.map((s, i) => (
           <track
-            key={`${s.lan}-${i}-${s.url}`}
+            key={`${s.lan}-${i}-${vttUrls[i] || s.url}`}
             kind="subtitles"
-            src={s.url}
+            src={vttUrls[i] || s.url}
             label={s.lanName || s.lan || "Subtitle"}
             srcLang={s.lan || "en"}
-            default={s.lan === "en" && i === subtitleIdx}
           />
         ))}
       </video>
@@ -712,20 +711,6 @@ export default function Player() {
       {(initialLoading || bufferLoading) && !hasFatal && (
         <div className="absolute inset-0 grid place-items-center pointer-events-none z-10">
           <Loader2 className="w-12 h-12 text-primary animate-spin" />
-        </div>
-      )}
-
-      {/* Seek indicator */}
-      {seekIndicator.visible && (
-        <div
-          className={cn(
-            "absolute top-1/2 -translate-y-1/2 z-10 pointer-events-none",
-            seekIndicator.side === "left" ? "left-8" : "right-8",
-          )}
-        >
-          <div className="bg-background/70 backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium">
-            {seekIndicator.side === "left" ? "-10s" : "+10s"}
-          </div>
         </div>
       )}
 
@@ -768,7 +753,7 @@ export default function Player() {
         )}
         aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
       >
-        <RotateCw className="h-5 w-5" />
+        {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
       </button>
 
       {/* Controls overlay */}
@@ -850,7 +835,12 @@ export default function Player() {
                 {hasNext ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); goToEpisode(1); }}
-                    className="inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-xs sm:text-sm"
+                    className={cn(
+                      "inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full backdrop-blur-md text-xs sm:text-sm transition-all",
+                      nextHighlighted
+                        ? "bg-primary text-primary-foreground scale-105 shadow-[0_0_20px_hsl(var(--primary)/0.6)]"
+                        : "bg-background/40 hover:bg-background/70",
+                    )}
                   >
                     <span className="hidden sm:inline">Next Episode</span>
                     <span className="sm:hidden">Next</span>
@@ -863,18 +853,28 @@ export default function Player() {
 
           {/* Progress */}
           <div
-            className="group relative h-1.5 bg-foreground/20 rounded-full cursor-pointer"
-            onClick={handleSeekClick}
+            ref={seekBarRef}
+            className="group relative h-3 flex items-center cursor-pointer touch-none"
+            onPointerDown={onSeekPointerDown}
+            onPointerMove={onSeekPointerMove}
+            onPointerUp={endSeek}
+            onPointerCancel={endSeek}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
-            <div
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ left: `${pct}%` }}
-            />
+            <div className="relative h-1.5 w-full bg-foreground/20 rounded-full">
+              <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+              <div
+                className={cn(
+                  "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3.5 w-3.5 rounded-full bg-primary transition-opacity",
+                  isSeeking ? "opacity-100 scale-110" : "opacity-0 group-hover:opacity-100",
+                )}
+                style={{ left: `${pct}%` }}
+              />
+            </div>
           </div>
 
           <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-            <span>{fmtTime(position)}</span>
+            <span>{fmtTime(displayTime)}</span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
