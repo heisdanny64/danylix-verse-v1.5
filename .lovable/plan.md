@@ -1,157 +1,56 @@
 ## Goal
 
-Fix streaming, polish the existing custom Player, and add a real Discover experience and a season/episode download UX — without disturbing the working Gifted API integration, downloads, subtitles, qualities, or auth.
+Align streaming with the Gifted API contract: the `stream_url` returned by `sources` is already a fully playable, proxied URL. Stop decoding, re-proxying, or rebuilding it. Just hand it to the player.
 
----
+## What's wrong today
 
-## 1) Streaming fix — diagnose first, then act
+`src/pages/Player.tsx` and `src/services/giftedApi.ts` implement a 3-tier fallback chain that:
 
-Before changing playback code, instrument it and read real signals.
+1. Calls `extractDirectUrl(stream_url)` to pull out and `decodeURIComponent` the inner `?url=` param, and tries that first.
+2. Falls back to the proxy `stream_url` if the direct URL fails.
+3. Falls back to `download_url` as a third "stream" tier.
 
-### Diagnostics (added to `src/pages/Player.tsx` and `gifted-proxy`)
+Per the new rule, the stream URL must be used **exactly as returned**. The decoding step often pulls out a signed/origin-locked URL the browser can't play, the download fallback isn't a real streaming source, and the whole chain hides the real failure cause.
 
-1. Log the resolved subjectId, the full `getGiftedSources` response, and the chosen `streamUrl` right before `hls.loadSource` / `video.src = ...`.
-2. Add a real `video.onerror` reporter that prints `video.error.code`, `video.error.message`, and `video.currentSrc`.
-3. In the edge function `gifted-proxy`, log upstream `status`, `content-type`, and the first 200 chars of the body when `!upstream.ok`. Return structured JSON like `{ error, status, fallback: status >= 500 }` with HTTP 200 for fallbackable errors so the client can read the body (current code returns 502, which surfaces as "Failed to proxy stream" generically).
-4. Run a live request via `supabase--curl_edge_functions` to `gifted-proxy` for a known-failing title to capture the real upstream payload and headers, and check `supabase--edge_function_logs` after a player attempt.
+## Changes
 
-### Conditional fixes (only applied based on diagnostic findings)
+### 1) `src/services/giftedApi.ts`
+- Delete the `extractDirectUrl` helper entirely (and its export).
+- Leave `getGiftedSources`, `findBestMatch`, `resolveAnimeEpisode`, `formatBytes` untouched.
 
-- **Case A — Proxy URL plays directly:** keep current behavior, no changes.
-- **Case B — `stream_url` contains an encoded `?url=` param and the decoded URL plays in a plain `<video>`:** add a helper `extractDirectUrl(streamUrl)` that parses the URL, finds an `url=` query param, `decodeURIComponent`s it, and returns it; try the direct URL first, fall back to the proxied URL on `error`.
-- **Case C — Decoded URL returns "Access Denied" / signed:** keep proxy URL, do not decode.
-- **Case D — Wrong `Content-Type` from upstream / playback issue:** set `video.src = streamUrl`, `video.setAttribute('type', 'video/mp4')`, `video.load()` for non-HLS sources; we already use hls.js for `.m3u8`.
-- **Case E — CORS issue:** `<video>` already has `crossOrigin="anonymous"`; if CORS is the cause, drop `crossOrigin` for non-HLS direct files (subtitle `<track>` will still need CORS — handle by fetching subtitle via the proxy and converting to a Blob URL).
-- **Case F — All fail for chosen quality:** existing fallback (try next `qualityIdx`) stays; only after all qualities fail we try `download_url` as a last resort source, and only then surface the fatal error.
+### 2) `src/pages/Player.tsx`
+- Remove the `extractDirectUrl` import.
+- Remove `sourceTier` state and the `directUrl` / `downloadUrl` derivations used as alternate sources.
+- `streamUrl` becomes simply `activeSource?.stream_url || ""` — no transformation, no conditional tier selection.
+- Remove the `useEffect` that resets `sourceTier` based on `directUrl`.
+- Remove `advanceFallback` + `advanceFallbackRef`. Replace the on-error and HLS-fatal-error handlers with:
+  - Log the error with `video.error.code/message/currentSrc` and (for HLS) `data.type/details/fatal` — required diagnostic visibility.
+  - If `qualityIdx + 1 < sources.length`, advance to the next quality (preserve position + play state, which already happens via the existing effect on `qualityIdx`).
+  - Otherwise set `streamError = true` and stop.
+- Update the source-load `useEffect` dependency array to drop `sourceTier` and `directUrl`/`downloadUrl` references.
+- Keep the diagnostic `console.log("[Player] Loading source", { quality, streamUrl })` (drop the `tier`/`hasDirect`/`hasDownload` fields).
+- Keep all existing UI: quality menu, subtitles (already loaded as multi-track and toggled via `textTracks[i].mode`), speed, auto-next, resume, cloud progress sync.
 
-This is a structured diagnostic flow — no speculative rewrites until logs confirm the cause.
+### 3) Quality + subtitle behavior — verify, no rewrite needed
+- Sources are already sorted descending by resolution; `qualityIdx = 0` = highest = "Auto". Confirmed already correct.
+- Quality switch already preserves `position` and play-state via `wasPlayingRef` + `resumeRef`. Keep as-is.
+- Subtitles already render one `<track>` per language with `default` on `lan === "en"` and toggle visibility via `textTracks[i].mode`. Keep as-is.
 
----
+### 4) Headers note
+HTML5 `<video>` and `hls.js` (default loader) cannot attach custom `User-Agent` / `Referer` / `Origin` headers from the browser — those are forbidden header names and are controlled by the browser. We will **not** add a custom fetch layer for this. The Gifted proxy URL is designed to work without them. No header code changes.
 
-## 2) Player source & subtitle handling (`src/pages/Player.tsx`)
+### 5) Diagnostics retained
+- `console.log("[Player] Loading source", { quality, streamUrl })` before assignment.
+- `console.error("[Player] VIDEO ERROR", { code, message, currentSrc })` on `video.error`.
+- `console.error("[Player] HLS error", { fatal, type, details })` on hls.js fatal.
 
-Small enhancements on top of the existing player:
+## Files touched
 
-- **Default = highest quality.** Sources are already sorted descending; ensure `qualityIdx` defaults to `0` and the "Auto" label still maps to highest. (Already the case — verify and keep.)
-- **Quality switch preserves time + play state.** Capture `position` and `playing` before swap, then on `loadedmetadata` set `currentTime = saved` and call `play()` if it was playing. (Currently we only preserve `position`; add play-state preservation.)
-- **Subtitles: load all tracks as switchable, not as `<track>` swap.** Render one `<track>` per subtitle with `default` set on the English entry (`lan === "en"`), and toggle visibility by setting `video.textTracks[i].mode = i === subtitleIdx ? "showing" : "disabled"`. This avoids re-mounting `<video>` on subtitle changes.
-- Subtitle `label` = `lanName`, `srcLang` = `lan`, `default` = `lan === "en"`.
+- `src/services/giftedApi.ts` — remove `extractDirectUrl`.
+- `src/pages/Player.tsx` — remove tier/fallback logic; use `stream_url` as-is; on error, only try next quality.
 
----
+## Not touched
 
-## 3) Discover page — full implementation (`src/pages/RecommendationsPage.tsx`)
-
-Replace current contents. **No hero banner.**
-
-### Top: genre chips
-
-- Horizontal scroll row of chips with a Lucide icon + label (no emojis):
-  Action (Swords), Drama (Drama), Comedy (Smile), Thriller (Skull), Sci-Fi (Rocket), Horror (Ghost), Romance (Heart), Animation (Sparkles), Anime (Tv), Documentary (FileVideo), Family (Users).
-- Multi-select up to **3**; click toggles. Active chips have primary bg.
-
-### Feed
-
-- Combined feed mixing **Trending + Popular + Top Rated + Now Playing/Airing** across movies, TV, and AniList anime.
-- Apply selected genre filter: TMDB calls use `with_genres`; if "Anime" is one of the active chips, include AniList trending/popular results (mapped via `animeToCard`).
-- Hard exclude content older than **1995** (filter on `release_date`/`first_air_date`/anime `year`).
-- Mild shuffle within each loaded batch to avoid repeating ordering patterns.
-- **Infinite scroll** via `IntersectionObserver` (same pattern as `CategoryPage`). No pagination UI.
-- Grid: `grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6`. Reuse `MovieCard` (existing type badges shown automatically).
-- URL syncs selected chips: `/recommendations?genres=action,drama` so the homepage "View All" handoff (#4) can pre-select.
-
-### Search shortcut
-
-Keep the existing top search bar pattern (link to `/search`) above chips for consistency.
-
----
-
-## 4) "View All" → Discover handoff
-
-- `MovieRow` "View All" already links to `/category/:slug`. Update `CategoryPage` to:
-  - Cap displayed items at **30** (stop loading after 30 unique cards).
-  - At the bottom, render a **"View More in Discover"** button → navigates to `/recommendations?genres=<mapped>` where the slug maps to a genre chip (e.g. `action` → `action`, `horror` → `horror`, `comedy` → `comedy`, `romance-drama` → `romance,drama`, `korean-dramas` → no genre but `lang=ko`, `trending-*` → no preset).
-- Add a small `slug → discoverParams` map in `CategoryPage`.
-
----
-
-## 5) Episode download UI (`src/components/DownloadModal.tsx`)
-
-For `type === "tv"` or `"anime"`, redesign modal contents:
-
-```text
-┌──────────────────────────────────────┐
-│ Download · Title                     │
-├──────────────────────────────────────┤
-│ Quality:  [ 1080p ] [ 720p ] [480p]  │
-│ Season:   [ Season 1   ▾ ]           │
-│ ┌──────────────────────────────────┐ │
-│ │ ☐ Select All                     │ │
-│ │ ☐ Episode 1     720p · 280 MB    │ │
-│ │ ☐ Episode 2     720p · 290 MB    │ │
-│ │ ☐ Episode 3     720p · 275 MB    │ │
-│ │ ...                              │ │
-│ └──────────────────────────────────┘ │
-│ [ Download N episodes ]              │
-└──────────────────────────────────────┘
-```
-
-- **Quality pills** at top — derived from the first probed episode's available qualities (cached).
-- **Season dropdown** — for TV: from `getMovieDetails(...).seasons`. For anime: only Season 1.
-- **Episode list** — for TV: `getSeasonDetails(id, season).episodes`. For anime: 1..`anime.episodes`. Each row has a Checkbox + episode label + (lazy) size for the chosen quality.
-- **Select All** checkbox toggles all.
-- **Download button** at bottom, disabled until ≥1 episode selected. Sequential downloads with a progress indicator (`Downloading 2/5 · Episode 3`). Triggers anchor download per episode (existing `triggerDownload`).
-- **Size formatting** via existing `formatBytes`: `< 1024 MB` → MB, otherwise GB with 2 decimals (update `formatBytes` to 2 decimals for MB-range too as spec requires).
-- For anime, episode resolution uses `resolveAnimeEpisode` so the API receives absolute episode numbers.
-
-For `type === "movie"` the modal stays as today.
-
----
-
-## 6) Continue Watching cloud sync (Supabase)
-
-Schema is already in place (`continue_watching` table). What's missing:
-
-- **Persist `currentTime` + `duration`**, not only `progress %`. Add columns `current_time real`, `duration real` via a migration. Required so we can resume to exact second instead of recomputing from %.
-- In `Player.tsx`, persist on:
-  - timer every **7s** during playback (current is 5s — fine to keep at 5–10s),
-  - `pause` event,
-  - `beforeunload` and route-change cleanup (use `navigator.sendBeacon` fallback to `supabase` insert).
-- On player mount: read existing `continue_watching` row for `(userId, content_id, content_type)` and seed `resumeRef.current = currentTime` so `loadedmetadata` resumes exact position. Today we only seed from quality switches.
-- Guard everything with `userId` (already done in `library.ts`), all rows are tied to `auth.uid()` via existing RLS.
-- **Watch history**: introduce `watch_history` table (append-only) with `user_id, content_id, content_type, season, episode, watched_at`; insert one row each time playback starts.
-- **Search history**: add `search_history` table (`user_id, query, searched_at`); write from `SearchPage` on submit.
-- **User preferences**: add `user_preferences` (`user_id PK, preferred_subtitle_lang, preferred_quality, autoplay_next bool`); read in Player to drive defaults.
-- All new tables: RLS `auth.uid() = user_id` for select/insert/update/delete, mirrored from existing `continue_watching` policies.
-
-Library is already cloud-synced; no changes there beyond piping the new fields through `supabase-library.ts`.
-
----
-
-## 7) Download link exposure
-
-Per instruction: leave as-is. No proxying of `download_url`, no obfuscation.
-
----
-
-## Files to change
-
-- `src/pages/Player.tsx` — diagnostics, source fallback chain, multi-track subtitles, exact-second resume, beacon save.
-- `supabase/functions/gifted-proxy/index.ts` — richer logging, structured error JSON, return 200 for fallbackable upstream errors.
-- `src/services/giftedApi.ts` — add `extractDirectUrl` helper; keep formatBytes 2dp.
-- `src/pages/RecommendationsPage.tsx` — full rewrite (Discover).
-- `src/pages/CategoryPage.tsx` — 30-item cap + "View More in Discover" CTA + slug→discover map.
-- `src/components/DownloadModal.tsx` — new layout for TV/anime with quality pills, season dropdown, episode checkboxes, sequential downloader.
-- `src/lib/supabase-library.ts` — extend continue-watching with `current_time`, `duration`; add helpers for `watch_history`, `search_history`, `user_preferences`.
-- `src/lib/library.ts` — pipe new fields through the hook.
-- `src/pages/SearchPage.tsx` — write to `search_history` on submit.
-
-### Migrations
-
-1. `alter table continue_watching add column current_time real, add column duration real;`
-2. Create `watch_history`, `search_history`, `user_preferences` with RLS policies (`auth.uid() = user_id`).
-
-## What I will NOT touch
-
-- `gifted-proxy` core auth/key handling, the API contract, or `GIFTED_API.md`.
-- Auth flow, profiles table, `BottomNav` 4-tab structure, `Index` homepage rows.
-- Player UI styling/design — only behavior fixes inside the existing layout.
+- `supabase/functions/gifted-proxy/index.ts` — unchanged.
+- TMDB / AniList metadata layer.
+- Player UI, subtitles, qualities menu, downloads, library/cloud sync, auth, navigation.
