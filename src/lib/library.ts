@@ -149,17 +149,37 @@ export function useLibrary() {
   }, [isInWatchlist, removeFromWatchlist, addToWatchlist]);
 
   const updateProgress = useCallback(
-    (movie: TMDBMovie, mediaType: "movie" | "tv" | "anime", progress: number, season?: number, episode?: number) => {
+    (
+      movie: TMDBMovie,
+      mediaType: "movie" | "tv" | "anime",
+      progress: number,
+      season?: number,
+      episode?: number,
+      currentTime?: number,
+      duration?: number,
+    ) => {
       setContinueWatching((prev) => {
         const filtered = prev.filter((item) => !(item.movie.id === movie.id && item.mediaType === mediaType));
-        if (progress >= 100) return filtered;
+        if (progress >= 90) return filtered;
         return [
           { movie, mediaType, progress, season, episode, updatedAt: Date.now() },
           ...filtered,
         ];
       });
       if (userId) {
-        updateCloudProgress(userId, String(movie.id), mediaType, getTitle(movie), getPoster(movie), progress, season, episode);
+        updateCloudProgress(
+          userId,
+          String(movie.id),
+          mediaType,
+          getTitle(movie),
+          getPoster(movie),
+          progress,
+          season,
+          episode,
+          undefined,
+          currentTime,
+          duration,
+        );
       }
     },
     [userId]
@@ -172,7 +192,7 @@ export function useLibrary() {
     }
   }, [userId]);
 
-  const activeContinueWatching = continueWatching.filter(item => item.progress < 100);
+  const activeContinueWatching = continueWatching.filter(item => item.progress < 90);
 
   return {
     watchlist,
