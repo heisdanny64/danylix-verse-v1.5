@@ -1,56 +1,109 @@
-## Goal
 
-Align streaming with the Gifted API contract: the `stream_url` returned by `sources` is already a fully playable, proxied URL. Stop decoding, re-proxying, or rebuilding it. Just hand it to the player.
+# Player Polish & Continue Watching Completion
 
-## What's wrong today
+Targeted fixes to `src/pages/Player.tsx`, `src/lib/library.ts`, `src/lib/supabase-library.ts`, and `src/components/ContinueWatchingRow.tsx`. Streaming/HLS source-loading logic stays untouched.
 
-`src/pages/Player.tsx` and `src/services/giftedApi.ts` implement a 3-tier fallback chain that:
+## 1. Remove all gesture handlers
 
-1. Calls `extractDirectUrl(stream_url)` to pull out and `decodeURIComponent` the inner `?url=` param, and tries that first.
-2. Falls back to the proxy `stream_url` if the direct URL fails.
-3. Falls back to `download_url` as a third "stream" tier.
+In `Player.tsx`:
+- Delete `handleTap`, `tapTimerRef`, `tapCountRef`, `lastTapXRef`, `seekIndicator` state and its overlay JSX.
+- Replace container `onClick={handleTap} onTouchEnd={handleTap}` with a simple click handler that toggles `showControls` only (ignored when target is inside `[data-controls]` / `[data-settings]`).
+- Keep `flashControls` (still used by buttons / mousemove).
 
-Per the new rule, the stream URL must be used **exactly as returned**. The decoding step often pulls out a signed/origin-locked URL the browser can't play, the download fallback isn't a real streaming source, and the whole chain hides the real failure cause.
+## 2. Draggable seek bar
 
-## Changes
+Replace the click-only progress bar (lines 803-813) with a true draggable slider.
 
-### 1) `src/services/giftedApi.ts`
-- Delete the `extractDirectUrl` helper entirely (and its export).
-- Leave `getGiftedSources`, `findBestMatch`, `resolveAnimeEpisode`, `formatBytes` untouched.
+State:
+- `isSeeking: boolean`
+- `seekPreview: number` (seconds)
 
-### 2) `src/pages/Player.tsx`
-- Remove the `extractDirectUrl` import.
-- Remove `sourceTier` state and the `directUrl` / `downloadUrl` derivations used as alternate sources.
-- `streamUrl` becomes simply `activeSource?.stream_url || ""` — no transformation, no conditional tier selection.
-- Remove the `useEffect` that resets `sourceTier` based on `directUrl`.
-- Remove `advanceFallback` + `advanceFallbackRef`. Replace the on-error and HLS-fatal-error handlers with:
-  - Log the error with `video.error.code/message/currentSrc` and (for HLS) `data.type/details/fatal` — required diagnostic visibility.
-  - If `qualityIdx + 1 < sources.length`, advance to the next quality (preserve position + play state, which already happens via the existing effect on `qualityIdx`).
-  - Otherwise set `streamError = true` and stop.
-- Update the source-load `useEffect` dependency array to drop `sourceTier` and `directUrl`/`downloadUrl` references.
-- Keep the diagnostic `console.log("[Player] Loading source", { quality, streamUrl })` (drop the `tier`/`hasDirect`/`hasDownload` fields).
-- Keep all existing UI: quality menu, subtitles (already loaded as multi-track and toggled via `textTracks[i].mode`), speed, auto-next, resume, cloud progress sync.
+Behavior:
+- `onPointerDown` on the bar: `setPointerCapture`, `isSeeking=true`, pause video (remember `wasPlayingRef`), compute & set `seekPreview` from clientX.
+- `onPointerMove` (while `isSeeking`): update `seekPreview` only — never write `video.currentTime`.
+- `onPointerUp` / `onPointerCancel`: `video.currentTime = seekPreview`, resume if `wasPlayingRef`, `isSeeking=false`.
+- In `timeupdate` listener: if `isSeeking`, ignore (`setPosition` skipped).
+- Bar fill / thumb / time label use `isSeeking ? seekPreview : position`.
+- Single shared implementation works for mouse + touch via Pointer Events.
 
-### 3) Quality + subtitle behavior — verify, no rewrite needed
-- Sources are already sorted descending by resolution; `qualityIdx = 0` = highest = "Auto". Confirmed already correct.
-- Quality switch already preserves `position` and play-state via `wasPlayingRef` + `resumeRef`. Keep as-is.
-- Subtitles already render one `<track>` per language with `default` on `lan === "en"` and toggle visibility via `textTracks[i].mode`. Keep as-is.
+## 3. Subtitles: SRT→VTT conversion + activation
 
-### 4) Headers note
-HTML5 `<video>` and `hls.js` (default loader) cannot attach custom `User-Agent` / `Referer` / `Origin` headers from the browser — those are forbidden header names and are controlled by the browser. We will **not** add a custom fetch layer for this. The Gifted proxy URL is designed to work without them. No header code changes.
+New helper `src/lib/subtitles.ts`:
+```ts
+export async function srtUrlToVttBlobUrl(url: string): Promise<string>
+```
+- Fetch text, detect `WEBVTT` header — if present return the URL unchanged.
+- Otherwise convert: prepend `WEBVTT\n\n`, replace `,` → `.` in timestamps (`/(\d\d:\d\d:\d\d),(\d{3})/g`), strip lone numeric index lines.
+- Wrap in `Blob([...], { type: "text/vtt" })`, return `URL.createObjectURL(blob)`.
 
-### 5) Diagnostics retained
-- `console.log("[Player] Loading source", { quality, streamUrl })` before assignment.
-- `console.error("[Player] VIDEO ERROR", { code, message, currentSrc })` on `video.error`.
-- `console.error("[Player] HLS error", { fatal, type, details })` on hls.js fatal.
+In `Player.tsx`:
+- Add `useQuery(["subs-vtt", subtitles])` (or `useEffect`) that maps each `GiftedSubtitle` to a converted blob URL; revoke on cleanup.
+- Render `<track>` per subtitle using the converted URL; remove `default` attribute (we drive activation manually).
+- Existing effect that sets `tracks[i].mode` already handles activation — keep it; add: when subtitles first load, auto-select index of `lan === "en"` if any (default-on English) by setting `subtitleIdx`.
+- Add CSS in `src/index.css`:
+  ```css
+  ::cue { color:#fff; background:transparent; font-family:system-ui,sans-serif; font-size:14px; text-shadow:0 1px 2px rgba(0,0,0,.6); }
+  ```
 
-## Files touched
+## 4. Quality handling
 
-- `src/services/giftedApi.ts` — remove `extractDirectUrl`.
-- `src/pages/Player.tsx` — remove tier/fallback logic; use `stream_url` as-is; on error, only try next quality.
+Already sorted desc and preserves position (lines 144-150, 369-374). Confirm `qualityIdx` defaults to `0` (highest). No change required beyond keeping the existing logic intact.
 
-## Not touched
+## 5. Next-episode highlight at 80%
 
-- `supabase/functions/gifted-proxy/index.ts` — unchanged.
-- TMDB / AniList metadata layer.
-- Player UI, subtitles, qualities menu, downloads, library/cloud sync, auth, navigation.
+In `Player.tsx`:
+- `const [nextHighlighted, setNextHighlighted] = useState(false)`
+- Reset to `false` whenever `episode`/`season` changes.
+- In `timeupdate` handler (or derived effect on `position`/`duration`): if `hasNext && !nextHighlighted && duration>0 && position/duration >= 0.8` → `setNextHighlighted(true)`.
+- Apply conditional classes to the existing "Next Episode" button: `bg-primary text-primary-foreground scale-105 shadow-[0_0_20px_hsl(var(--primary)/0.6)]` with a `transition-all`.
+
+## 6. Continue Watching — complete the loop
+
+### Schema
+Existing `continue_watching` already has `current_time_sec`, `duration_sec`, `progress`, season/episode, poster, title — sufficient. **No migration needed.** Treat this as the `watch_progress` table referenced in the brief.
+
+### Tracking (`Player.tsx`)
+Replace the current 5-second persist effect:
+- Compute `pct = (position / duration) * 100` from real values (no estimates).
+- Upsert with `onConflict: "user_id,content_id,content_type"` so first-watch rows get created (current `.update()` silently no-ops if row missing).
+- Persist on: 5s interval, `pause`, `ended`, and `beforeunload` / cleanup.
+- If `pct >= 90`: delete row from `continue_watching` (mark complete, removes from row).
+- Always update local `useLibrary` via `updateProgress` so homepage reacts immediately.
+
+### Smart resume
+Already implemented (lines 387-409) — keep. Ensure resume seeks even if `current_time_sec` exists but no row matches season/episode (already guarded).
+
+### `useLibrary` (`src/lib/library.ts`)
+- Make `updateProgress` accept `currentTime` & `duration` and forward them to `updateCloudProgress`.
+- `activeContinueWatching` filter: `progress < 90` (was `< 100`) to match completion rule.
+
+### `supabase-library.ts`
+- Extend `updateCloudProgress` signature with optional `currentTime`, `duration`; include in upsert payload.
+- `fetchCloudContinueWatching`: order by `updated_at desc` (already), `.limit(20)`.
+
+### `ContinueWatchingRow.tsx`
+- Already shows poster, title, progress bar, episode label — keep.
+- Ensure click goes to player (it does); resume comes from cloud seed.
+- Make progress bar use the real `item.progress` (already does).
+
+### Library page
+Add the same row at the top of `LibraryPage.tsx` if not present (verify during implementation; render `<ContinueWatchingRow />`).
+
+## 7. Player icon fix
+
+In `Player.tsx`:
+- Import `Maximize`, `Minimize` from `lucide-react`; drop unused `RotateCw`.
+- Floating fullscreen button (line 710): render `isFullscreen ? <Minimize/> : <Maximize/>`.
+
+## 8. Out of scope (do not touch)
+- `streamUrl` / HLS loading / fallback / decoding
+- `services/giftedApi.ts`, `gifted-proxy` edge function
+- Download system, TMDB, AniList, search
+
+## File touch list
+- `src/pages/Player.tsx` — gestures removed, slider drag, subtitle blob URLs + auto-EN, 80% highlight, Maximize/Minimize icon, persist/upsert + complete-at-90.
+- `src/lib/subtitles.ts` — new SRT→VTT helper.
+- `src/index.css` — `::cue` styling.
+- `src/lib/library.ts` — pass currentTime/duration through; complete threshold 90.
+- `src/lib/supabase-library.ts` — upsert with time fields; limit 20.
+- `src/pages/LibraryPage.tsx` — ensure ContinueWatchingRow is rendered (verify only).
