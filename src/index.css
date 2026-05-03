@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Subtitle cue styling — minimal, readable, no background box */
+::cue {
+  color: #fff;
+  background: transparent;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
 @layer base {
   :root {
     --background: 240 14% 4%;
