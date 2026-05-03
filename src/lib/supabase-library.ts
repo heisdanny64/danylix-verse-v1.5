@@ -75,7 +75,8 @@ export async function fetchCloudContinueWatching(userId: string): Promise<CloudC
     .from("continue_watching")
     .select("*")
     .eq("user_id", userId)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false })
+    .limit(20);
   if (error) { console.error("fetchCloudContinueWatching error:", error); return []; }
   return (data ?? []) as CloudContinueItem[];
 }
@@ -89,9 +90,11 @@ export async function updateCloudProgress(
   progress: number,
   season?: number,
   episode?: number,
-  lastChannel?: number
+  lastChannel?: number,
+  currentTime?: number,
+  duration?: number,
 ) {
-  if (progress >= 95) {
+  if (progress >= 90) {
     await supabase
       .from("continue_watching")
       .delete()
@@ -112,6 +115,8 @@ export async function updateCloudProgress(
       season: season ?? null,
       episode: episode ?? null,
       last_channel: lastChannel ?? null,
+      current_time_sec: currentTime ?? null,
+      duration_sec: duration ?? null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id,content_id,content_type" }
