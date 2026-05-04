@@ -1,37 +1,26 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { searchTMDB } from "@/lib/tmdb";
 import { searchGifted } from "@/services/giftedApi";
-import { tmdbToMediaItem, giftedToMediaItem, mediaToTmdbCard, normalizeTitle, variantKey, isVariant, GIFTED_CLEAN_REGEX, type MediaItem } from "@/lib/media";
+import { tmdbToMediaItem, giftedToMediaItem, mediaToTmdbCard, normalizeTitle, variantKey, type MediaItem } from "@/lib/media";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
-type FilterType = "all" | "movie" | "tv";
+type FilterType = "all" | "movie" | "tv" | "gifted";
 
 function mergeResults(tmdb: MediaItem[], gifted: MediaItem[]): MediaItem[] {
   const tmdbKeys = new Set(tmdb.map((t) => normalizeTitle(t.title)));
-  
-  // 1. Clean Gifted results (remove seasons)
-  const cleanedGifted = gifted.filter(g => !GIFTED_CLEAN_REGEX.test(g.title));
-
-  // 2. Deduplicate against TMDB
-  const giftedFiltered = cleanedGifted.filter((g) => {
+  const tmdbVariants = new Set(tmdb.map((t) => variantKey(t.title)));
+  const giftedFiltered = gifted.filter((g) => {
     const n = normalizeTitle(g.title);
-    const existsInTmdb = tmdbKeys.has(n);
-
-    if (existsInTmdb) {
-      // If it matches TMDB, only keep if it's a variant ([English], etc)
-      return isVariant(g.title);
-    }
-    
-    // If it doesn't exist in TMDB, keep it (Nollywood, etc)
-    return true;
+    const v = variantKey(g.title);
+    // Drop only if BOTH base and variant key match — keeps "Naruto [English]"
+    return !(tmdbKeys.has(n) && tmdbVariants.has(v));
   });
-
   return [...tmdb, ...giftedFiltered];
 }
 
@@ -65,7 +54,6 @@ const SearchPage = () => {
     return () => window.clearTimeout(t);
   }, [query, user?.id]);
 
-  // Parallel Search Execution
   const { data: tmdbResults, isLoading: tmdbLoading } = useQuery({
     queryKey: ["search-tmdb", query],
     queryFn: () => searchTMDB(query),
@@ -82,21 +70,15 @@ const SearchPage = () => {
 
   const isLoading = tmdbLoading || giftedLoading;
 
-  // Only merge AFTER both requests resolve (or at least one has data and the other is not loading)
-  const finalResults = useMemo(() => {
-    if (query.length <= 1) return [];
-    
-    const tmdbItems: MediaItem[] = (tmdbResults || [])
-      .filter((r) => r.media_type === "movie" || r.media_type === "tv")
-      .map((r) => tmdbToMediaItem(r as any, r.media_type as "movie" | "tv"));
-    
-    const giftedItems: MediaItem[] = (giftedResults || []).map(giftedToMediaItem);
-    
-    return mergeResults(tmdbItems, giftedItems);
-  }, [tmdbResults, giftedResults, query]);
+  const tmdbItems: MediaItem[] = (tmdbResults || [])
+    .filter((r) => r.media_type === "movie" || r.media_type === "tv")
+    .map((r) => tmdbToMediaItem(r as any, r.media_type as "movie" | "tv"));
+  const giftedItems: MediaItem[] = (giftedResults || []).map(giftedToMediaItem);
+  const merged = mergeResults(tmdbItems, giftedItems);
 
-  const filtered = finalResults.filter((m) => {
+  const filtered = merged.filter((m) => {
     if (filter === "all") return true;
+    if (filter === "gifted") return m.source === "gifted";
     return m.type === filter;
   });
 
@@ -104,6 +86,7 @@ const SearchPage = () => {
     { label: "All", value: "all" },
     { label: "Movies", value: "movie" },
     { label: "TV", value: "tv" },
+    { label: "Gifted", value: "gifted" },
   ];
 
   return (

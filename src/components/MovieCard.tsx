@@ -13,12 +13,14 @@ const MovieCard = ({ movie, mediaType, compact, variant = "portrait", hrefFor }:
   const { title, year } = getDisplayInfo(movie);
   const type = (movie.media_type as "movie" | "tv") || mediaType || "movie";
   const giftedId = (movie as any)._giftedId as string | undefined;
-  const source = giftedId ? "gifted" : "tmdb";
-  const id = giftedId || movie.id;
 
   const link = hrefFor
     ? hrefFor(movie)
-    : `/details/${type}/${id}?source=${source}`;
+    : giftedId
+      ? `/details/gifted/${giftedId}`
+      : type === "tv"
+        ? `/details/tv/${movie.id}`
+        : `/details/movie/${movie.id}`;
 
   // Gifted items already have absolute image URLs (poster_path holds the URL).
   const posterSrc = giftedId

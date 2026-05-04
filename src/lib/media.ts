@@ -17,16 +17,12 @@ export type MediaItem = {
   giftedId?: string;
 };
 
-/** Cleaning regex for Gifted results to remove season-specific entries */
-export const GIFTED_CLEAN_REGEX = /(s\d+|season\s?\d+|s\d+-s\d+)/i;
-
 /** Loose canonical title normalization for dedup / matching. */
 export function normalizeTitle(title: string): string {
   return (title || "")
     .toLowerCase()
     .replace(/\[[^\]]*\]/g, "")
     .replace(/\([^)]*\)/g, "")
-    .replace(GIFTED_CLEAN_REGEX, "")
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -36,14 +32,8 @@ export function normalizeTitle(title: string): string {
 export function variantKey(title: string): string {
   const n = normalizeTitle(title);
   // keep variant tokens
-  const m = (title || "").toLowerCase().match(/\[(english|dub|dubbed|sub|subbed|raw|japanese)\]/i) || 
-            (title || "").toLowerCase().match(/\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/i);
-  return m ? `${n}::${m[1].toLowerCase()}` : n;
-}
-
-export function isVariant(title: string): boolean {
-  return /\[(english|dub|dubbed|sub|subbed|raw|japanese)\]/i.test(title) || 
-         /\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/i.test(title);
+  const m = (title || "").toLowerCase().match(/\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/);
+  return m ? `${n}::${m[1]}` : n;
 }
 
 export function tmdbToMediaItem(

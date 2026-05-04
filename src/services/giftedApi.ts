@@ -131,16 +131,10 @@ export async function findBestMatch(opts: MatchOptions): Promise<string | number
     const results = await searchGifted(q);
     for (const r of results) {
       if (!r?.subjectId) continue;
-      
-      // BASE MATCH FIRST: Prioritize titles that are NOT variants
-      const isVar = /\[(english|dub|dubbed|sub|subbed|raw|japanese)\]/i.test(r.title || "");
       const sim = tokenJaccard(opts.title, r.title || "");
       if (sim < 0.4) continue; // pre-filter
 
       let score = sim;
-      
-      // Penalize variants during matching to prefer the original title
-      if (isVar) score -= 0.1;
 
       // Year
       if (opts.year) {
@@ -167,25 +161,6 @@ export async function findBestMatch(opts: MatchOptions): Promise<string | number
   cache[cacheKey] = picked;
   saveCache(SUBJECT_CACHE_KEY, cache);
   return picked;
-}
-
-export async function findVariants(title: string): Promise<{ label: string; id: string | number }[]> {
-  const results = await searchGifted(title);
-  const baseNorm = normalizeTitle(title);
-  
-  return results
-    .filter(r => {
-      const rNorm = normalizeTitle(r.title || "");
-      return rNorm === baseNorm;
-    })
-    .map(r => {
-      const match = (r.title || "").match(/\[(english|dub|dubbed|sub|subbed|raw|japanese)\]/i);
-      return {
-        label: match ? match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase() : "Original",
-        id: r.subjectId
-      };
-    })
-    .filter((v, i, a) => a.findIndex(t => t.label === v.label) === i); // Unique labels
 }
 
 export async function getGiftedSources(

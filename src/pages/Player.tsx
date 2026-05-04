@@ -25,15 +25,12 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
-  Languages,
 } from "lucide-react";
 import { getMovieDetails, getSeasonDetails, getDisplayInfo } from "@/lib/tmdb";
 import { useLibrary } from "@/lib/library";
 import {
   findBestMatch,
   getGiftedSources,
-  getGiftedSubject,
-  findVariants,
   type GiftedSource,
   type GiftedSubtitle,
 } from "@/services/giftedApi";
@@ -42,7 +39,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { srtUrlToVttBlobUrl } from "@/lib/subtitles";
 
-type SettingsView = "root" | "quality" | "subtitle" | "speed" | "language";
+type SettingsView = "root" | "quality" | "subtitle" | "speed";
 const SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as const;
 
 function fmtTime(sec: number) {
@@ -61,46 +58,32 @@ function qualityRank(q: string): number {
 
 export default function Player() {
   const { type, id } = useParams<{ type: string; id: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { updateProgress } = useLibrary();
   const { user } = useAuth();
 
-  const source = searchParams.get("source") || "tmdb";
+  // Anime now plays through the TV pipeline. Legacy /player/anime/* routes
+  // are redirected by App.tsx.
   const contentType = (type as "movie" | "tv") || "movie";
   const numericId = Number(id);
   const season = Number(searchParams.get("season")) || 1;
   const episode = Number(searchParams.get("episode")) || 1;
-  const variantId = searchParams.get("variant");
 
   // Metadata
   const { data: tmdbDetails } = useQuery({
     queryKey: ["player-detail", contentType, numericId],
     queryFn: () => getMovieDetails(numericId, contentType as "movie" | "tv"),
-    enabled: source === "tmdb" && !!numericId,
+    enabled: !!numericId,
   });
-
-  const { data: giftedDetails } = useQuery({
-    queryKey: ["player-gifted-detail", id],
-    queryFn: () => getGiftedSubject(id!),
-    enabled: source === "gifted" && !!id,
-  });
-
   const { data: seasonData } = useQuery({
     queryKey: ["player-season", numericId, season],
     queryFn: () => getSeasonDetails(numericId, season),
-    enabled: source === "tmdb" && contentType === "tv" && !!numericId,
+    enabled: contentType === "tv" && !!numericId,
   });
 
-  const title = useMemo(() => {
-    if (source === "tmdb") return tmdbDetails ? getDisplayInfo(tmdbDetails).title : "";
-    return giftedDetails?.title || "";
-  }, [source, tmdbDetails, giftedDetails]);
-
-  const year = useMemo(() => {
-    if (source === "tmdb") return tmdbDetails ? getDisplayInfo(tmdbDetails).year ?? null : null;
-    return giftedDetails?.year ? Number(giftedDetails.year) : null;
-  }, [source, tmdbDetails, giftedDetails]);
+  const title = tmdbDetails ? getDisplayInfo(tmdbDetails as any).title : "";
+  const year = tmdbDetails ? getDisplayInfo(tmdbDetails as any).year ?? null : null;
 
   const totalEpisodes = seasonData?.episodes?.length || 0;
   const isMovie = contentType === "movie";
@@ -108,7 +91,8 @@ export default function Player() {
   const hasPrev = !isMovie && episode > 1;
 
   // Resolved subjectId for Gifted
-  const { data: matchedSubjectId, isLoading: matchingId, refetch: refetchMatch } = useQuery({
+  const matchEnabled = !!title;
+  const { data: subjectId, isLoading: matchingId, refetch: refetchMatch } = useQuery({
     queryKey: ["gifted-match", contentType, numericId, title, year],
     queryFn: () =>
       findBestMatch({
@@ -117,17 +101,8 @@ export default function Player() {
         type: contentType,
         externalId: numericId,
       }),
-    enabled: source === "tmdb" && !!title,
+    enabled: matchEnabled,
     staleTime: 30 * 60 * 1000,
-  });
-
-  const subjectId = source === "gifted" ? id : (variantId || matchedSubjectId);
-
-  // Variants
-  const { data: variants } = useQuery({
-    queryKey: ["gifted-variants", title],
-    queryFn: () => findVariants(title),
-    enabled: !!title,
   });
 
   const sourceSeason = isMovie ? undefined : season;
@@ -153,11 +128,21 @@ export default function Player() {
     [sourcesData],
   );
 
+  // FIX 1: Memoize subtitles so its reference only changes when sourcesData
+  // changes. Without this, a new array is created on every render, causing the
+  // blob-URL effect and the auto-select effect to re-run in an infinite loop
+  // which freezes the app on navigation.
   const subtitles: GiftedSubtitle[] = useMemo(
     () => sourcesData?.subtitles || [],
     [sourcesData],
   );
 
+  // Convert SRT subtitle URLs to WebVTT blob URLs (browser only renders VTT in <track>).
+  // PERF: Deferred by 2 s after subtitles arrive so the conversion network
+  // requests don't compete with HLS init + manifest fetch on mount, which was
+  // causing the visible UI freeze when navigating to the player.
+  // Conversions are also staggered (sequential, not Promise.all) so they don't
+  // all hit the network simultaneously on low-end devices.
   const [vttUrls, setVttUrls] = useState<string[]>([]);
   useEffect(() => {
     if (!subtitles.length) {
@@ -168,9 +153,11 @@ export default function Player() {
     const created: string[] = [];
 
     const run = async () => {
+      // Wait for the stream to get a head-start before kicking off subtitle fetches.
       await new Promise<void>((res) => { window.setTimeout(res, 2000); });
       if (cancelled) return;
 
+      // Convert one at a time so we don't saturate the network on mount.
       const urls: string[] = [];
       for (const s of subtitles) {
         if (cancelled) break;
@@ -188,6 +175,8 @@ export default function Player() {
     };
   }, [subtitles]);
 
+  // Keep a ref to sources so tryNextQuality always reads the current
+  // array length and never closes over a stale value from a previous render.
   const sourcesRef = useRef<GiftedSource[]>([]);
   sourcesRef.current = sources;
 
@@ -202,6 +191,7 @@ export default function Player() {
   }, [subjectId, sourceEpisode]);
 
   const activeSource = sources[qualityIdx] || sources[0];
+  // Use the Gifted API stream URL exactly as returned — no decoding, no rewriting.
   const streamUrl = activeSource?.stream_url || "";
 
   // Player state
@@ -214,6 +204,10 @@ export default function Player() {
   const initialResumeAppliedRef = useRef(false);
   const tryNextQualityRef = useRef<() => void>(() => {});
   const isSeekingRef = useRef(false);
+
+  // Track whether the current streamUrl load is still valid.
+  // Prevents stale error callbacks from a previous source triggering
+  // tryNextQuality after the URL has already changed.
   const loadIdRef = useRef(0);
 
   const [playing, setPlaying] = useState(false);
@@ -232,10 +226,15 @@ export default function Player() {
   const [settingsView, setSettingsView] = useState<SettingsView>("root");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Auto-next overlay
   const [autoNext, setAutoNext] = useState<number | null>(null);
   const autoNextTimer = useRef<number | null>(null);
 
+  // Resume position to apply on next loadedmetadata.
   const resumeRef = useRef<number>(0);
+  // Resolves when the Supabase resume fetch completes (hit or miss).
+  // handleReady awaits this so it never races a slow DB response and
+  // misses the saved timestamp — the root cause of resume starting at 0.
   const resumeReadyRef = useRef<Promise<void>>(Promise.resolve());
   const resolveResumeRef = useRef<() => void>(() => {});
 
@@ -247,13 +246,23 @@ export default function Player() {
     const video = videoRef.current;
     if (!video || !streamUrl) return;
 
+    // Stamp this load so stale callbacks from a prior URL can self-cancel.
     const currentLoadId = ++loadIdRef.current;
 
+    console.log("[Player] Loading source", {
+      qualityIdx,
+      quality: activeSource?.quality,
+      streamUrl,
+    });
+
+    // Tear down any existing HLS instance before starting a new load.
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
 
+    // Abort any in-flight native load to prevent its error/loadedmetadata
+    // events from firing after we've already moved to a new URL.
     video.pause();
     video.removeAttribute("src");
     video.load();
@@ -264,81 +273,119 @@ export default function Player() {
       /\/hls\//i.test(streamUrl);
 
     const handleReady = async () => {
+      // Ignore if this callback belongs to a superseded load.
       if (currentLoadId !== loadIdRef.current) return;
       setBufferLoading(false);
+      // Wait for the Supabase resume fetch to finish before seeking.
+      // Without this await the seek happens before resumeRef is populated
+      // on slower connections, causing playback to always start at 0.
       await resumeReadyRef.current;
-      if (currentLoadId !== loadIdRef.current) return;
+      if (currentLoadId !== loadIdRef.current) return; // re-check after await
       if (resumeRef.current > 0) {
         try { video.currentTime = resumeRef.current; } catch { /* noop */ }
         resumeRef.current = 0;
       }
       if (wasPlayingRef.current || !initialResumeAppliedRef.current) {
-        video.play().catch(() => {});
-        initialResumeAppliedRef.current = true;
+        video.play().catch(() => { /* autoplay blocked */ });
       }
+      initialResumeAppliedRef.current = true;
     };
 
     if (isM3u8 && Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 90,
-      });
+      const hls = new Hls({ enableWorker: true });
       hlsRef.current = hls;
-      hls.loadSource(streamUrl);
-      hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, handleReady);
-      hls.on(Hls.Events.ERROR, (_, data) => {
+      hls.on(Hls.Events.ERROR, (_e, data) => {
         if (currentLoadId !== loadIdRef.current) return;
+        console.error("[Player] HLS error", { fatal: data.fatal, type: data.type, details: data.details });
         if (data.fatal) {
-          console.error("[Player] HLS fatal error", data);
           tryNextQualityRef.current();
         }
       });
-    } else {
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+    } else if (isM3u8 && video.canPlayType("application/vnd.apple.mpegurl")) {
+      // Safari native HLS
       video.src = streamUrl;
+      try { video.load(); } catch { /* noop */ }
       video.addEventListener("loadedmetadata", handleReady, { once: true });
-      video.addEventListener("error", () => {
-        if (currentLoadId !== loadIdRef.current) return;
-        console.error("[Player] Native video error");
-        tryNextQualityRef.current();
-      }, { once: true });
+    } else {
+      // Native MP4
+      video.src = streamUrl;
+      try { video.load(); } catch { /* noop */ }
+      video.addEventListener("loadedmetadata", handleReady, { once: true });
     }
+
+    return () => {
+      // Invalidate this load so any pending callbacks are ignored.
+      loadIdRef.current++;
+
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      // Clean up native load so its events don't fire after unmount/re-run.
+      video.removeEventListener("loadedmetadata", handleReady);
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamUrl]);
 
-  tryNextQualityRef.current = () => {
+  // FIX 2: tryNextQuality no longer closes over qualityIdx from the render
+  // that created it. Instead it reads the latest index via a functional
+  // setState updater, so rapid async HLS error callbacks can't use a stale
+  // index to silently skip past all qualities and hit the error overlay.
+  const tryNextQuality = useCallback(() => {
     setQualityIdx((prev) => {
-      if (prev + 1 < sourcesRef.current.length) return prev + 1;
+      if (prev + 1 < sourcesRef.current.length) {
+        console.warn("[Player] Stream failed, trying next quality");
+        return prev + 1;
+      }
+      console.error("[Player] All qualities exhausted");
       setStreamError(true);
       setBufferLoading(false);
       return prev;
     });
-  };
+  }, []); // no deps — reads live values via ref and functional updater
 
-  // Sync video state
+  // Video event listeners
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onTime = () => {
-      if (!isSeekingRef.current) setPosition(v.currentTime);
+      if (isSeekingRef.current) return;
+      setPosition(v.currentTime);
     };
     const onDur = () => setDuration(v.duration);
     const onWait = () => setBufferLoading(true);
     const onCanPlay = () => setBufferLoading(false);
-    const onEnded = () => {
-      if (hasNext) setAutoNext(10);
+    const onErr = () => {
+      // Ignore errors fired during a src="" reset (code 4 / no source).
+      if (!v.src || v.src === window.location.href) return;
+      const err = v.error;
+      console.error("[Player] VIDEO ERROR", {
+        code: err?.code,
+        message: err?.message,
+        currentSrc: v.currentSrc,
+      });
+      tryNextQualityRef.current();
     };
-
+    const onEnded = () => {
+      if (hasNext) setAutoNext(5);
+      else setPlaying(false);
+    };
     v.addEventListener("play", onPlay);
     v.addEventListener("pause", onPause);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("durationchange", onDur);
     v.addEventListener("waiting", onWait);
     v.addEventListener("canplay", onCanPlay);
+    v.addEventListener("error", onErr);
     v.addEventListener("ended", onEnded);
-
     return () => {
       v.removeEventListener("play", onPlay);
       v.removeEventListener("pause", onPause);
@@ -346,33 +393,112 @@ export default function Player() {
       v.removeEventListener("durationchange", onDur);
       v.removeEventListener("waiting", onWait);
       v.removeEventListener("canplay", onCanPlay);
+      v.removeEventListener("error", onErr);
       v.removeEventListener("ended", onEnded);
     };
   }, [hasNext]);
 
-  // Initial resume fetch
   useEffect(() => {
-    if (!user?.id || !numericId) return;
-    resumeReadyRef.current = new Promise((res) => { resolveResumeRef.current = res; });
-    const fetchResume = async () => {
+    tryNextQualityRef.current = tryNextQuality;
+  }, [tryNextQuality]);
+
+  // Speed
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = speed;
+  }, [speed]);
+
+  // Quality switch: preserve position + play state
+  useEffect(() => {
+    resumeRef.current = position;
+    wasPlayingRef.current = playing;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qualityIdx]);
+
+  // Toggle subtitle track visibility without remounting <track> elements
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const tracks = v.textTracks;
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].mode = i === subtitleIdx ? "showing" : "disabled";
+    }
+  }, [subtitleIdx, vttUrls.length]);
+
+  // Auto-enable English subtitle on first load if available.
+  const subAutoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (subAutoSelectedRef.current) return;
+    if (!subtitles.length || !vttUrls.length) return;
+    const enIdx = subtitles.findIndex((s) => /^en/i.test(s.lan || ""));
+    if (enIdx >= 0) setSubtitleIdx(enIdx);
+    subAutoSelectedRef.current = true;
+  }, [subtitles, vttUrls]);
+
+  // Reset subtitle auto-pick + next-episode highlight when episode/source changes.
+  useEffect(() => {
+    subAutoSelectedRef.current = false;
+    setNextHighlighted(false);
+  }, [subjectId, sourceEpisode]);
+
+  // 80% next-episode highlight trigger.
+  useEffect(() => {
+    if (nextHighlighted || !hasNext || !duration) return;
+    if (position / duration >= 0.8) setNextHighlighted(true);
+  }, [position, duration, hasNext, nextHighlighted]);
+
+  // Seed resume position from cloud on first load.
+  // We also create a promise here that resolveResumeRef resolves when the
+  // fetch completes — handleReady awaits it to avoid the race condition.
+  useEffect(() => {
+    resumeRef.current = 0;
+    // Create a fresh promise for this load. handleReady will await it.
+    resumeReadyRef.current = new Promise<void>((resolve) => {
+      resolveResumeRef.current = resolve;
+    });
+
+    if (!user?.id || !numericId) {
+      resolveResumeRef.current(); // nothing to fetch, unblock immediately
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
       try {
         const { data } = await supabase
-          .from("user_library")
-          .select("last_position")
+          .from("continue_watching")
+          .select("current_time_sec, season, episode")
           .eq("user_id", user.id)
-          .eq("tmdb_id", numericId)
-          .eq("media_type", contentType)
-          .eq("season_number", season)
-          .eq("episode_number", episode)
+          .eq("content_id", String(numericId))
+          .eq("content_type", contentType)
           .maybeSingle();
-        if (data?.last_position) resumeRef.current = data.last_position;
-      } catch { /* noop */ }
-      finally { resolveResumeRef.current(); }
-    };
-    fetchResume();
-  }, [user?.id, numericId, contentType, season, episode]);
 
-  // Persist progress
+        if (!cancelled && data) {
+          // For movies, Supabase may store season/episode as null OR as 1/1
+          // depending on how updateProgress was called. Accept both.
+          const seasonMatch = isMovie
+            ? (data.season == null || data.season === 1)
+            : (data.season ?? null) === season;
+          const episodeMatch = isMovie
+            ? (data.episode == null || data.episode === 1)
+            : (data.episode ?? null) === episode;
+
+          if (seasonMatch && episodeMatch && data.current_time_sec > 5) {
+            resumeRef.current = data.current_time_sec;
+          }
+        }
+      } finally {
+        // Always resolve — even on error — so handleReady is never blocked.
+        if (!cancelled) resolveResumeRef.current();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      resolveResumeRef.current(); // unblock handleReady on cleanup
+    };
+  }, [user?.id, numericId, contentType, season, episode, isMovie]);
+
+  // Persist progress: every 5s, on pause, on ended, on unmount/unload.
   const persistRef = useRef<() => void>(() => {});
   useEffect(() => {
     persistRef.current = () => {
@@ -382,38 +508,24 @@ export default function Player() {
       const dur = v.duration;
       if (!dur || !cur) return;
       const pct = Math.min(100, Math.round((cur / dur) * 100));
-      
-      const metadata = source === "tmdb" ? tmdbDetails : {
-        id: giftedDetails?.subjectId,
-        title: giftedDetails?.title,
-        name: giftedDetails?.title,
-        overview: giftedDetails?.overview,
-        poster_path: giftedDetails?.imageUrl,
-        backdrop_path: giftedDetails?.imageUrl,
-        vote_average: giftedDetails?.rating,
-        release_date: giftedDetails?.year ? `${giftedDetails.year}-01-01` : undefined,
-        first_air_date: giftedDetails?.year ? `${giftedDetails.year}-01-01` : undefined,
-        genres: (giftedDetails?.genres || []).map((g, i) => ({ id: i, name: g })),
-      } as Record<string, unknown>;
-
-      if (metadata) {
+      if (tmdbDetails) {
         const m = {
-          id: metadata.id,
-          title: metadata.title,
-          name: metadata.name,
-          overview: metadata.overview,
-          poster_path: metadata.poster_path,
-          backdrop_path: metadata.backdrop_path,
-          vote_average: metadata.vote_average,
-          release_date: metadata.release_date,
-          first_air_date: metadata.first_air_date,
-          genre_ids: (metadata.genres as Array<{id: number}>)?.map((g) => g.id) || [],
+          id: tmdbDetails.id,
+          title: tmdbDetails.title,
+          name: tmdbDetails.name,
+          overview: tmdbDetails.overview,
+          poster_path: tmdbDetails.poster_path,
+          backdrop_path: tmdbDetails.backdrop_path,
+          vote_average: tmdbDetails.vote_average,
+          release_date: tmdbDetails.release_date,
+          first_air_date: tmdbDetails.first_air_date,
+          genre_ids: tmdbDetails.genres.map((g: any) => g.id),
           media_type: contentType,
-        } as Record<string, unknown>;
-        updateProgress(m as any, contentType as "movie" | "tv", pct, season, episode, cur, dur);
+        } as any;
+        updateProgress(m, contentType as "movie" | "tv", pct, season, episode, cur, dur);
       }
     };
-  }, [tmdbDetails, giftedDetails, source, contentType, season, episode, updateProgress]);
+  }, [tmdbDetails, contentType, season, episode, updateProgress]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -507,10 +619,8 @@ export default function Player() {
   const goToEpisode = useCallback((delta: 1 | -1) => {
     const next = episode + delta;
     cancelAutoNext();
-    const sourceParam = source === 'gifted' ? '&source=gifted' : '';
-    const variantParam = variantId ? `&variant=${variantId}` : '';
-    navigate(`/player/tv/${id}?season=${season}&episode=${next}${sourceParam}${variantParam}`, { replace: true });
-  }, [episode, navigate, id, season, source, variantId, cancelAutoNext]);
+    navigate(`/player/tv/${numericId}?season=${season}&episode=${next}`, { replace: true });
+  }, [episode, navigate, numericId, season, cancelAutoNext]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
@@ -530,6 +640,7 @@ export default function Player() {
     navigate(-1);
   }, [navigate]);
 
+  // Click on the player surface only toggles controls visibility (no gestures).
   const handleSurfaceClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest("[data-controls]") || target.closest("[data-settings]")) return;
@@ -537,6 +648,7 @@ export default function Player() {
     flashControls();
   }, [flashControls]);
 
+  // Draggable seek bar (Pointer Events: mouse + touch + pen).
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const computeSeekTime = (clientX: number) => {
     const rect = seekBarRef.current?.getBoundingClientRect();
@@ -575,25 +687,7 @@ export default function Player() {
     flashControls();
   };
 
-  const handleLanguageSwitch = (vId: string | number) => {
-    const v = videoRef.current;
-    const currentTime = v ? v.currentTime : 0;
-    wasPlayingRef.current = v ? !v.paused : false;
-    
-    const next = new URLSearchParams(searchParams);
-    if (vId === matchedSubjectId) {
-      next.delete("variant");
-    } else {
-      next.set("variant", String(vId));
-    }
-    
-    resumeRef.current = currentTime;
-    initialResumeAppliedRef.current = false;
-    setSearchParams(next, { replace: true });
-    setSettingsOpen(false);
-  };
-
-  if (source === "tmdb" && !Number.isFinite(numericId)) {
+  if (!Number.isFinite(numericId)) {
     return <div className="p-8">Invalid content.</div>;
   }
 
@@ -613,6 +707,14 @@ export default function Player() {
       onMouseMove={flashControls}
       onClick={handleSurfaceClick}
     >
+      {/*
+        Removed crossOrigin="anonymous". The Gifted API returns a proxy
+        stream_url that redirects to a CDN that does not send CORS headers.
+        crossOrigin="anonymous" forces a CORS preflight which the CDN rejects,
+        causing the browser to fire an error event → tryNextQuality exhausts
+        all sources → "no playable sources" overlay. Plain MP4 playback does
+        not require CORS at all.
+      */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
@@ -657,347 +759,327 @@ export default function Player() {
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); handleBack(); }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-muted text-foreground text-sm"
+                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-sm"
               >
-                Go Back
+                Back
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Auto-next overlay */}
-      {autoNext != null && (
-        <div className="absolute inset-0 z-40 grid place-items-center bg-black/60 backdrop-blur-sm">
-          <div className="text-center space-y-6">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground uppercase tracking-widest font-bold">Next Episode In</p>
-              <p className="text-7xl font-black text-primary tabular-nums">{autoNext}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={(e) => { e.stopPropagation(); goToEpisode(1); }}
-                className="h-12 px-8 rounded-full bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/20 active:scale-95 transition-transform"
-              >
-                Play Now
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); cancelAutoNext(); }}
-                className="h-12 px-8 rounded-full bg-white/10 text-white font-bold backdrop-blur active:scale-95 transition-transform"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Controls */}
-      <div
-        data-controls
+      {/* Floating fullscreen button */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); toggleFullscreen(); flashControls(); }}
         className={cn(
-          "absolute inset-0 z-20 flex flex-col transition-opacity duration-500 bg-gradient-to-t from-black/80 via-transparent to-black/60",
-          showControls ? "opacity-100" : "opacity-0 pointer-events-none"
+          "absolute right-3 top-1/2 -translate-y-1/2 z-20 grid place-items-center h-10 w-10 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 transition-opacity",
+          showControls ? "opacity-100" : "opacity-0 pointer-events-none",
+        )}
+        aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+      >
+        {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+      </button>
+
+      {/* Controls overlay */}
+      <div
+        className={cn(
+          "absolute inset-0 flex flex-col transition-opacity duration-300 z-10",
+          showControls ? "opacity-100" : "opacity-0 pointer-events-none",
         )}
       >
-        {/* Top Bar */}
-        <div className="p-4 flex items-center gap-4">
-          <button onClick={handleBack} className="p-2 -m-2 text-white/80 hover:text-white transition-colors">
-            <ArrowLeft className="w-6 h-6" />
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent">
+          <button
+            onClick={(e) => { e.stopPropagation(); handleBack(); }}
+            className="grid place-items-center h-10 w-10 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-5 w-5" />
           </button>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-bold text-white truncate">{title}</h2>
-            {epLabel && <p className="text-[10px] text-white/60 font-medium uppercase tracking-wider">{epLabel}</p>}
+          <div className="text-center min-w-0 px-4">
+            <p className="text-xs text-muted-foreground truncate">{title}</p>
+            <p className="text-sm font-medium truncate">{isMovie ? "Movie" : epLabel}</p>
           </div>
           <button
-            onClick={() => setSettingsOpen(true)}
-            className="p-2 -m-2 text-white/80 hover:text-white transition-colors"
+            onClick={(e) => { e.stopPropagation(); setSettingsOpen((v) => !v); }}
+            className={cn(
+              "grid place-items-center h-10 w-10 rounded-full backdrop-blur-md transition-colors",
+              settingsOpen ? "bg-primary text-primary-foreground" : "bg-background/40 hover:bg-background/70",
+            )}
+            aria-label="Settings"
           >
-            <Settings className="w-6 h-6" />
+            <Settings className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Center Controls */}
-        <div className="flex-1 flex items-center justify-center gap-8 md:gap-16">
-          {!isMovie && (
+        {/* Center playback */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-6">
+          <div className="flex items-center justify-center gap-8">
             <button
-              disabled={!hasPrev}
-              onClick={(e) => { e.stopPropagation(); goToEpisode(-1); }}
-              className="p-3 text-white/80 hover:text-white disabled:opacity-30 transition-all active:scale-90"
+              onClick={(e) => { e.stopPropagation(); seekBy(-10); }}
+              className="grid place-items-center h-12 w-12 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
+              aria-label="Rewind 10 seconds"
             >
-              <SkipBack className="w-8 h-8 fill-current" />
+              <Rewind className="h-6 w-6" />
             </button>
-          )}
-          <button
-            onClick={(e) => { e.stopPropagation(); seekBy(-10); }}
-            className="p-3 text-white/80 hover:text-white transition-all active:scale-90"
-          >
-            <Rewind className="w-8 h-8 fill-current" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-            className="w-20 h-20 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-xl shadow-primary/20 active:scale-90 transition-transform"
-          >
-            {playing ? <Pause className="w-10 h-10 fill-current" /> : <Play className="w-10 h-10 fill-current ml-1" />}
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); seekBy(10); }}
-            className="p-3 text-white/80 hover:text-white transition-all active:scale-90"
-          >
-            <FastForward className="w-8 h-8 fill-current" />
-          </button>
-          {!isMovie && (
             <button
-              disabled={!hasNext}
-              onClick={(e) => { e.stopPropagation(); goToEpisode(1); }}
-              className="p-3 text-white/80 hover:text-white disabled:opacity-30 transition-all active:scale-90"
+              onClick={(e) => { e.stopPropagation(); togglePlay(); cancelAutoNext(); }}
+              className="grid place-items-center h-20 w-20 rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 transition-transform"
+              aria-label={playing ? "Pause" : "Play"}
             >
-              <SkipForward className="w-8 h-8 fill-current" />
+              {playing ? <Pause className="h-9 w-9 fill-current" /> : <Play className="h-9 w-9 fill-current ml-1" />}
             </button>
-          )}
+            <button
+              onClick={(e) => { e.stopPropagation(); seekBy(10); }}
+              className="grid place-items-center h-12 w-12 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70"
+              aria-label="Forward 10 seconds"
+            >
+              <FastForward className="h-6 w-6" />
+            </button>
+          </div>
         </div>
 
-        {/* Bottom Bar */}
-        <div className="p-4 md:p-8 space-y-4">
-          {/* Seek Bar */}
-          <div className="space-y-2">
-            <div
-              ref={seekBarRef}
-              className="relative h-1.5 w-full bg-white/20 rounded-full cursor-pointer group"
-              onPointerDown={onSeekPointerDown}
-              onPointerMove={onSeekPointerMove}
-              onPointerUp={endSeek}
-              onPointerLeave={endSeek}
-            >
-              <div
-                className="absolute inset-y-0 left-0 bg-primary rounded-full"
-                style={{ width: `${pct}%` }}
-              >
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform" />
+        {/* Bottom: episode nav + progress */}
+        <div data-controls className="p-4 pb-6 bg-gradient-to-t from-black/85 to-transparent">
+          {!isMovie && (
+            <div className="flex items-center justify-between mb-3 gap-2">
+              <div className="flex-1 flex justify-start">
+                {hasPrev ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); goToEpisode(-1); }}
+                    className="inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-xs sm:text-sm"
+                  >
+                    <SkipBack className="h-4 w-4" />
+                    <span className="hidden sm:inline">Previous Episode</span>
+                    <span className="sm:hidden">Prev</span>
+                  </button>
+                ) : <span />}
+              </div>
+              <div className="flex-1 flex justify-end">
+                {hasNext ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); goToEpisode(1); }}
+                    className={cn(
+                      "inline-flex items-center gap-2 h-9 px-3 sm:px-4 rounded-full backdrop-blur-md text-xs sm:text-sm transition-all",
+                      nextHighlighted
+                        ? "bg-primary text-primary-foreground scale-105 shadow-[0_0_20px_hsl(var(--primary)/0.6)]"
+                        : "bg-background/40 hover:bg-background/70",
+                    )}
+                  >
+                    <span className="hidden sm:inline">Next Episode</span>
+                    <span className="sm:hidden">Next</span>
+                    <SkipForward className="h-4 w-4" />
+                  </button>
+                ) : <span />}
               </div>
             </div>
-            <div className="flex items-center justify-between text-[10px] font-bold text-white/60 tabular-nums">
-              <span>{fmtTime(displayTime)}</span>
-              <span>{fmtTime(duration)}</span>
+          )}
+
+          {/* Progress */}
+          <div
+            ref={seekBarRef}
+            className="group relative h-3 flex items-center cursor-pointer touch-none"
+            onPointerDown={onSeekPointerDown}
+            onPointerMove={onSeekPointerMove}
+            onPointerUp={endSeek}
+            onPointerCancel={endSeek}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative h-1.5 w-full bg-foreground/20 rounded-full">
+              <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+              <div
+                className={cn(
+                  "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3.5 w-3.5 rounded-full bg-primary transition-opacity",
+                  isSeeking ? "opacity-100 scale-110" : "opacity-0 group-hover:opacity-100",
+                )}
+                style={{ left: `${pct}%` }}
+              />
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={(e) => { e.stopPropagation(); setMuted(!muted); if (videoRef.current) videoRef.current.muted = !muted; }}
-                className="text-white/80 hover:text-white transition-colors"
-              >
-                {muted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={volume}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value);
-                  setVolume(v);
-                  if (videoRef.current) {
-                    videoRef.current.volume = v;
-                    videoRef.current.muted = v === 0;
-                  }
-                }}
-                className="w-20 h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-primary"
-              />
-            </div>
-
-            <div className="flex items-center gap-6">
-              <button
-                onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-                className="text-white/80 hover:text-white transition-colors"
-              >
-                {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-              </button>
-            </div>
+          <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+            <span>{fmtTime(displayTime)}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const v = videoRef.current;
+                if (!v) return;
+                v.muted = !v.muted;
+                setMuted(v.muted);
+              }}
+              className="grid place-items-center h-7 w-7 rounded-full hover:bg-white/10"
+              aria-label={muted ? "Unmute" : "Mute"}
+            >
+              {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </button>
+            <span>{fmtTime(duration)}</span>
           </div>
         </div>
       </div>
 
-      {/* Settings Drawer */}
+      {/* Settings panel */}
       {settingsOpen && (
-        <div
-          data-settings
-          className="absolute inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={() => { setSettingsOpen(false); setSettingsView("root"); }}
-        >
+        <>
           <div
-            className="w-full max-w-md bg-card rounded-3xl overflow-hidden shadow-2xl border border-white/10 animate-in slide-in-from-bottom-8 duration-300"
+            className="absolute inset-0 z-30"
+            onClick={(e) => { e.stopPropagation(); setSettingsOpen(false); }}
+          />
+          <div
+            data-settings
             onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "absolute z-40 rounded-2xl bg-black/55 backdrop-blur-2xl border border-white/10 overflow-hidden shadow-xl",
+              "left-3 right-3 bottom-24 sm:left-auto sm:right-4 sm:bottom-auto sm:top-16 sm:w-80",
+            )}
           >
-            <div className="p-4 border-b border-white/5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {settingsView !== "root" && (
-                  <button onClick={() => setSettingsView("root")} className="p-1 -ml-1 text-muted-foreground hover:text-foreground">
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
-                )}
-                <h3 className="font-bold text-sm">
-                  {settingsView === "root" && "Settings"}
-                  {settingsView === "quality" && "Video Quality"}
-                  {settingsView === "subtitle" && "Subtitles"}
-                  {settingsView === "speed" && "Playback Speed"}
-                  {settingsView === "language" && "Language"}
-                </h3>
+            {settingsView === "root" ? (
+              <div className="py-2">
+                <SettingsRootRow
+                  icon={Sliders}
+                  label="Quality"
+                  value={sources.length === 0 ? "—" : qualityIdx === 0 ? `Auto (${sources[0]?.quality || "—"})` : sources[qualityIdx]?.quality || "—"}
+                  onClick={() => setSettingsView("quality")}
+                />
+                <SettingsRootRow
+                  icon={SubtitlesIcon}
+                  label="Subtitles"
+                  value={subtitleIdx < 0 ? "Off" : subtitles[subtitleIdx]?.lanName || subtitles[subtitleIdx]?.lan || "On"}
+                  onClick={() => setSettingsView("subtitle")}
+                />
+                <SettingsRootRow
+                  icon={Gauge}
+                  label="Speed"
+                  value={`${speed}x`}
+                  onClick={() => setSettingsView("speed")}
+                />
               </div>
-              <button onClick={() => setSettingsOpen(false)} className="p-1 -mr-1 text-muted-foreground hover:text-foreground">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-2 max-h-[60vh] overflow-y-auto">
-              {settingsView === "root" && (
-                <div className="space-y-1">
-                  <button
-                    onClick={() => setSettingsView("quality")}
-                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Sliders className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium">Quality</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <span>{activeSource?.quality || "Auto"}</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => setSettingsView("subtitle")}
-                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <SubtitlesIcon className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium">Subtitles</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <span>{subtitleIdx === -1 ? "Off" : subtitles[subtitleIdx]?.lanName || "On"}</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => setSettingsView("speed")}
-                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Gauge className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium">Speed</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <span>{speed}x</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  </button>
-                  {variants && variants.length > 1 && (
-                    <button
-                      onClick={() => setSettingsView("language")}
-                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Languages className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-medium">Language</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <span>{variants.find(v => v.id === subjectId)?.label || "Original"}</span>
-                        <ChevronRight className="w-4 h-4" />
-                      </div>
-                    </button>
+            ) : (
+              <div className="py-1">
+                <button
+                  type="button"
+                  onClick={() => setSettingsView("root")}
+                  className="flex items-center gap-2 w-full px-4 h-12 text-sm text-muted-foreground hover:text-foreground border-b border-white/5"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                  <span className="font-medium text-foreground">
+                    {settingsView === "quality" && "Quality"}
+                    {settingsView === "subtitle" && "Subtitles"}
+                    {settingsView === "speed" && "Speed"}
+                  </span>
+                </button>
+                <div className="py-1 max-h-[50vh] overflow-y-auto">
+                  {settingsView === "quality" && sources.map((s, i) => (
+                    <SettingsOptionRow
+                      key={`${s.quality}-${i}`}
+                      label={i === 0 ? `Auto (${s.quality})` : s.quality}
+                      active={qualityIdx === i}
+                      onClick={() => { setQualityIdx(i); setSettingsView("root"); }}
+                    />
+                  ))}
+                  {settingsView === "quality" && sources.length === 0 && (
+                    <p className="px-4 py-3 text-sm text-muted-foreground">No qualities available</p>
                   )}
-                </div>
-              )}
-
-              {settingsView === "quality" && (
-                <div className="space-y-1">
-                  {sources.map((s, i) => (
-                    <button
-                      key={i}
-                      onClick={() => { setQualityIdx(i); setSettingsOpen(false); }}
-                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                    >
-                      <span className={cn("text-sm font-medium", qualityIdx === i && "text-primary")}>{s.quality}</span>
-                      {qualityIdx === i && <Check className="w-4 h-4 text-primary" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {settingsView === "subtitle" && (
-                <div className="space-y-1">
-                  <button
-                    onClick={() => {
-                      setSubtitleIdx(-1);
-                      if (videoRef.current) {
-                        Array.from(videoRef.current.textTracks).forEach(t => t.mode = "disabled");
-                      }
-                      setSettingsOpen(false);
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                  >
-                    <span className={cn("text-sm font-medium", subtitleIdx === -1 && "text-primary")}>Off</span>
-                    {subtitleIdx === -1 && <Check className="w-4 h-4 text-primary" />}
-                  </button>
-                  {subtitles.map((s, i) => (
-                    <button
-                      key={i}
-                      onClick={() => {
-                        setSubtitleIdx(i);
-                        if (videoRef.current) {
-                          Array.from(videoRef.current.textTracks).forEach((t, idx) => t.mode = idx === i ? "showing" : "disabled");
-                        }
-                        setSettingsOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                    >
-                      <span className={cn("text-sm font-medium", subtitleIdx === i && "text-primary")}>{s.lanName || s.lan}</span>
-                      {subtitleIdx === i && <Check className="w-4 h-4 text-primary" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {settingsView === "speed" && (
-                <div className="space-y-1">
-                  {SPEEDS.map((s) => (
-                    <button
+                  {settingsView === "subtitle" && (
+                    <>
+                      <SettingsOptionRow
+                        label="Off"
+                        active={subtitleIdx < 0}
+                        onClick={() => { setSubtitleIdx(-1); setSettingsView("root"); }}
+                      />
+                      {subtitles.map((s, i) => (
+                        <SettingsOptionRow
+                          key={`${s.lan}-${i}`}
+                          label={s.lanName || s.lan}
+                          active={subtitleIdx === i}
+                          onClick={() => { setSubtitleIdx(i); setSettingsView("root"); }}
+                        />
+                      ))}
+                      {subtitles.length === 0 && (
+                        <p className="px-4 py-3 text-sm text-muted-foreground">No subtitles available</p>
+                      )}
+                    </>
+                  )}
+                  {settingsView === "speed" && SPEEDS.map((s) => (
+                    <SettingsOptionRow
                       key={s}
-                      onClick={() => {
-                        setSpeed(s);
-                        if (videoRef.current) videoRef.current.playbackRate = s;
-                        setSettingsOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                    >
-                      <span className={cn("text-sm font-medium", speed === s && "text-primary")}>{s}x</span>
-                      {speed === s && <Check className="w-4 h-4 text-primary" />}
-                    </button>
+                      label={`${s}x`}
+                      active={speed === s}
+                      onClick={() => { setSpeed(s); setSettingsView("root"); }}
+                    />
                   ))}
                 </div>
-              )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
-              {settingsView === "language" && variants && (
-                <div className="space-y-1">
-                  {variants.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => handleLanguageSwitch(v.id)}
-                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors"
-                    >
-                      <span className={cn("text-sm font-medium", subjectId === String(v.id) && "text-primary")}>{v.label}</span>
-                      {subjectId === String(v.id) && <Check className="w-4 h-4 text-primary" />}
-                    </button>
-                  ))}
-                </div>
-              )}
+      {/* Auto-next overlay */}
+      {autoNext != null && (
+        <div className="absolute inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm">
+          <div className="rounded-2xl bg-background/40 backdrop-blur-xl border border-white/10 px-6 py-5 text-center min-w-[260px]">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Up next</p>
+            <p className="text-2xl mt-1 font-semibold">Episode {episode + 1}</p>
+            <p className="text-sm text-muted-foreground mt-1">Starting in {autoNext}…</p>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); cancelAutoNext(); }}
+                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-background/60 hover:bg-background/80 text-sm"
+              >
+                <X className="h-4 w-4" /> Cancel
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); cancelAutoNext(); goToEpisode(1); }}
+                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-sm"
+              >
+                <Play className="h-4 w-4 fill-current" /> Play now
+              </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function SettingsRootRow({
+  icon: Icon,
+  label,
+  value,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-4 w-full px-4 h-14 hover:bg-white/5 transition-colors text-left"
+    >
+      <Icon className="h-5 w-5 text-foreground/90 shrink-0" />
+      <span className="flex-1 text-sm font-medium text-foreground">{label}</span>
+      <span className="text-sm text-muted-foreground truncate max-w-[40%]">{value}</span>
+      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+    </button>
+  );
+}
+
+function SettingsOptionRow({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center justify-between w-full px-4 h-12 text-sm transition-colors",
+        active ? "text-primary font-medium" : "text-foreground hover:bg-white/5",
+      )}
+    >
+      <span>{label}</span>
+      {active && <Check className="h-4 w-4" />}
+    </button>
   );
 }
