@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeTitle as canonicalize, giftedToMediaItem, type MediaItem } from "@/lib/media";
 
 export interface GiftedSource {
   quality: string;
@@ -20,7 +21,10 @@ export interface GiftedSearchItem {
   year?: number | string;
   imageUrl?: string;
   rating?: number;
-  type?: string;
+  type?: "movie" | "tv";
+  genres?: string[];
+  cast?: { name: string; character?: string; profile?: string }[];
+  overview?: string;
 }
 
 interface GiftedSourcesResponse {
@@ -28,54 +32,35 @@ interface GiftedSourcesResponse {
   subtitles?: GiftedSubtitle[];
 }
 
-const SUBJECT_CACHE_KEY = "dverse_gifted_subject_cache";
-const ANIME_OFFSET_CACHE_KEY = "dverse_anime_episode_offsets";
+const SUBJECT_CACHE_KEY = "dverse_gifted_subject_cache_v2";
 
 function loadCache<T extends Record<string, any>>(key: string): T {
   try {
     const raw = sessionStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : ({} as T);
-  } catch {
-    return {} as T;
-  }
+  } catch { return {} as T; }
 }
-
 function saveCache(key: string, value: Record<string, any>) {
-  try {
-    sessionStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* noop */
-  }
+  try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* noop */ }
 }
 
 async function callProxy<T>(path: string, query: Record<string, string | number> = {}): Promise<T> {
-  const { data, error } = await supabase.functions.invoke("gifted-proxy", {
-    body: { path, query },
-  });
+  const { data, error } = await supabase.functions.invoke("gifted-proxy", { body: { path, query } });
   if (error) throw new Error(error.message || "Proxy request failed");
   return data as T;
 }
 
-/** Normalize titles for fuzzy matching. */
 export function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/\b(season|saison|part|cour|stagione)\s*\d+\b/g, "")
-    .replace(/\b(s|p)\d+\b/g, "")
-    .replace(/\b(i{1,3}|iv|v|vi{0,3}|ix|x)\b$/g, "")
-    .replace(/[:\-–—_().,!?'"]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return canonicalize(title);
 }
 
-function similarity(a: string, b: string): number {
+function tokenJaccard(a: string, b: string): number {
   const A = normalizeTitle(a);
   const B = normalizeTitle(b);
   if (!A || !B) return 0;
   if (A === B) return 1;
-  // Token Jaccard
-  const ta = new Set(A.split(" "));
-  const tb = new Set(B.split(" "));
+  const ta = new Set(A.split(" ").filter(Boolean));
+  const tb = new Set(B.split(" ").filter(Boolean));
   const inter = [...ta].filter((t) => tb.has(t)).length;
   const union = new Set([...ta, ...tb]).size;
   return union ? inter / union : 0;
@@ -100,20 +85,38 @@ export async function searchGifted(query: string, page = 1): Promise<GiftedSearc
       title: r.title || "",
       releaseDate: r.releaseDate,
       year: r.releaseDate ? Number(String(r.releaseDate).slice(0, 4)) : undefined,
-      imageUrl: r.cover?.url || r.thumbnail,
+      imageUrl: r.cover?.url || r.thumbnail || r.imageUrl,
       rating: r.imdbRatingValue ? Number(r.imdbRatingValue) : undefined,
       type: r.subjectType === 1 ? "movie" : r.subjectType === 2 ? "tv" : undefined,
+      genres: Array.isArray(r.genre) ? r.genre : Array.isArray(r.genres) ? r.genres : undefined,
+      cast: Array.isArray(r.cast) ? r.cast : undefined,
+      overview: r.description || r.overview,
     })) as GiftedSearchItem[];
   } catch {
     return [];
   }
 }
 
+/** Fetch Gifted Nollywood items, normalized + flagged. */
+export async function getNollywoodFromGifted(page = 1): Promise<MediaItem[]> {
+  const items = await searchGifted("Nollywood", page);
+  return items.map(giftedToMediaItem).map((m) => {
+    const lower = (m.title || "").toLowerCase();
+    const onlyDrama =
+      Array.isArray((items.find((g) => String(g.subjectId) === m.id) as any)?.genres) &&
+      (items.find((g) => String(g.subjectId) === m.id) as any).genres.length === 1 &&
+      String((items.find((g) => String(g.subjectId) === m.id) as any).genres[0]).toLowerCase() === "drama";
+    if (lower.includes("nollywood") || onlyDrama) m.isNollywood = true;
+    return m;
+  });
+}
+
 export interface MatchOptions {
   title: string;
   year?: number | null;
-  type?: "movie" | "tv" | "anime";
-  externalId: number; // tmdb or anilist id
+  type?: "movie" | "tv";
+  externalId: number;
+  episodeCount?: number | null;
 }
 
 export async function findBestMatch(opts: MatchOptions): Promise<string | number | null> {
@@ -121,36 +124,40 @@ export async function findBestMatch(opts: MatchOptions): Promise<string | number
   const cache = loadCache<Record<string, string | number | null>>(SUBJECT_CACHE_KEY);
   if (cacheKey in cache) return cache[cacheKey];
 
-  const baseTitle = normalizeTitle(opts.title);
-  const queries = Array.from(new Set([opts.title, baseTitle].filter(Boolean)));
-
+  const queries = Array.from(new Set([opts.title, normalizeTitle(opts.title)].filter(Boolean)));
   let best: { id: string | number; score: number } | null = null;
 
   for (const q of queries) {
     const results = await searchGifted(q);
     for (const r of results) {
       if (!r?.subjectId) continue;
-      const sim = similarity(opts.title, r.title || "");
+      const sim = tokenJaccard(opts.title, r.title || "");
+      if (sim < 0.4) continue; // pre-filter
+
       let score = sim;
+
+      // Year
       if (opts.year) {
-        const ry = Number(
-          r.year || (r.releaseDate ? r.releaseDate.slice(0, 4) : 0),
-        );
+        const ry = Number(r.year || (r.releaseDate ? r.releaseDate.slice(0, 4) : 0));
         if (ry) {
           const diff = Math.abs(ry - opts.year);
+          if (diff > 2) continue; // reject
           if (diff === 0) score += 0.2;
-          else if (diff <= 1) score += 0.1;
-          else if (diff > 3) score -= 0.15;
+          else if (diff === 1) score += 0.1;
         }
       }
-      if (!best || score > best.score) {
-        best = { id: r.subjectId, score };
+
+      // Type
+      if (opts.type && r.type) {
+        if (r.type !== opts.type) score -= 0.3;
       }
+
+      if (!best || score > best.score) best = { id: r.subjectId, score };
     }
-    if (best && best.score >= 0.85) break;
+    if (best && best.score >= 0.95) break;
   }
 
-  const picked = best && best.score >= 0.4 ? best.id : null;
+  const picked = best && best.score >= 0.7 ? best.id : null;
   cache[cacheKey] = picked;
   saveCache(SUBJECT_CACHE_KEY, cache);
   return picked;
@@ -187,66 +194,32 @@ export async function getGiftedSources(
   }
 }
 
-/** Compute the absolute episode number for an anime sequel.
- *  Walks AniList prequel chain and sums episodes of all prior entries.
- */
-export async function resolveAnimeEpisode(
-  anilistId: number,
-  episode: number,
-): Promise<number> {
-  const cache = loadCache<Record<string, number>>(ANIME_OFFSET_CACHE_KEY);
-  const key = String(anilistId);
-  if (key in cache) return episode + cache[key];
-
-  const ANILIST_URL = "https://graphql.anilist.co";
-  const query = `
-    query ($id: Int) {
-      Media(id: $id, type: ANIME) {
-        episodes
-        relations { edges { relationType node { id type format episodes } } }
-      }
-    }
-  `;
-
-  let offset = 0;
-  const visited = new Set<number>();
-  let currentId: number | null = anilistId;
-
-  while (currentId && !visited.has(currentId)) {
-    visited.add(currentId);
-    try {
-      const res = await fetch(ANILIST_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, variables: { id: currentId } }),
-      });
-      const json = await res.json();
-      const edges = json?.data?.Media?.relations?.edges || [];
-      const prequel = edges.find(
-        (e: any) =>
-          e.relationType === "PREQUEL" &&
-          e.node?.type === "ANIME" &&
-          ["TV", "TV_SHORT"].includes(e.node?.format),
-      );
-      if (prequel?.node) {
-        offset += prequel.node.episodes || 0;
-        currentId = prequel.node.id;
-      } else {
-        currentId = null;
-      }
-    } catch {
-      currentId = null;
-    }
-  }
-
-  cache[key] = offset;
-  saveCache(ANIME_OFFSET_CACHE_KEY, cache);
-  return episode + offset;
-}
-
 export function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return "—";
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
   return `${mb.toFixed(2)} MB`;
+}
+
+/** Fetch single Gifted subject details (used by Nollywood detail page). */
+export async function getGiftedSubject(subjectId: string | number): Promise<GiftedSearchItem | null> {
+  try {
+    const data = await callProxy<any>(`subject/${subjectId}`, {});
+    const r = data?.result || data?.data || data;
+    if (!r) return null;
+    return {
+      subjectId: r.subjectId ?? r.id ?? subjectId,
+      title: r.title || "",
+      releaseDate: r.releaseDate,
+      year: r.releaseDate ? Number(String(r.releaseDate).slice(0, 4)) : undefined,
+      imageUrl: r.cover?.url || r.thumbnail || r.imageUrl,
+      rating: r.imdbRatingValue ? Number(r.imdbRatingValue) : undefined,
+      type: r.subjectType === 1 ? "movie" : r.subjectType === 2 ? "tv" : undefined,
+      genres: Array.isArray(r.genre) ? r.genre : Array.isArray(r.genres) ? r.genres : undefined,
+      cast: Array.isArray(r.cast) ? r.cast : undefined,
+      overview: r.description || r.overview,
+    };
+  } catch {
+    return null;
+  }
 }

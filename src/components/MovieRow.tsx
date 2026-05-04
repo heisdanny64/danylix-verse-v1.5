@@ -8,11 +8,15 @@ interface MovieRowProps {
   title: string;
   movies: TMDBMovie[];
   isLoading?: boolean;
-  mediaType?: "movie" | "tv" | "anime";
+  mediaType?: "movie" | "tv";
   slug?: string;
+  variant?: "portrait" | "landscape";
+  /** Override card link path. Receives the movie, returns an href. */
+  hrefFor?: (movie: TMDBMovie) => string;
 }
 
-const MovieRow = ({ title, movies, isLoading, mediaType, slug }: MovieRowProps) => {
+const MovieRow = ({ title, movies, isLoading, mediaType, slug, variant = "portrait", hrefFor }: MovieRowProps) => {
+  const isLandscape = variant === "landscape";
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between px-4">
@@ -26,12 +30,12 @@ const MovieRow = ({ title, movies, isLoading, mediaType, slug }: MovieRowProps) 
       <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
         {isLoading
           ? Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex-shrink-0" style={{ width: "clamp(130px, 22vw, 220px)" }}>
-                <Skeleton className="aspect-[2/3] rounded-lg" />
+              <div key={i} className="flex-shrink-0" style={{ width: isLandscape ? "clamp(220px, 60vw, 320px)" : "clamp(130px, 22vw, 220px)" }}>
+                <Skeleton className={isLandscape ? "aspect-video rounded-lg" : "aspect-[2/3] rounded-lg"} />
               </div>
             ))
           : movies.map((movie) => (
-              <MovieCard key={movie.id} movie={movie} mediaType={mediaType} />
+              <MovieCard key={movie.id} movie={movie} mediaType={mediaType} variant={variant} hrefFor={hrefFor} />
             ))}
       </div>
     </section>

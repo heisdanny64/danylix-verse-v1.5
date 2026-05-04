@@ -2,16 +2,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, Plus, Play, Check, Download } from "lucide-react";
 import { getMovieDetails, backdropUrl, getDisplayInfo, type TMDBEpisode } from "@/lib/tmdb";
-import { getAnimeDetails, animeToCard, type AnimeItem } from "@/lib/anilist";
-import { getMovieTVRecommendations, getAnimeRecommendationsFromTasteDive } from "@/lib/tastedive";
+import { getMovieTVRecommendations } from "@/lib/tastedive";
 import { useLibrary } from "@/lib/library";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import EpisodeList from "@/components/EpisodeList";
-import AnimeEpisodeList from "@/components/AnimeEpisodeList";
 import MovieRow from "@/components/MovieRow";
+import CastRow from "@/components/CastRow";
 import DownloadModal from "@/components/DownloadModal";
 import { useState } from "react";
 
@@ -22,32 +21,23 @@ const DetailsPage = () => {
   const { toggleWatchlist, isInWatchlist } = useLibrary();
   const [downloadOpen, setDownloadOpen] = useState(false);
 
-  const contentType = (type as "movie" | "tv" | "anime") || "movie";
+  // Anime now flows through TV route
+  const contentType = ((type === "anime" ? "tv" : type) as "movie" | "tv") || "movie";
   const numericId = Number(id);
 
-  // TMDB queries (movie/tv only)
-  const { data: tmdbDetail, isLoading: tmdbLoading } = useQuery({
+  const { data: detail, isLoading } = useQuery({
     queryKey: ["detail", contentType, numericId],
-    queryFn: () => getMovieDetails(numericId, contentType as "movie" | "tv"),
-    enabled: contentType !== "anime" && !!numericId,
+    queryFn: () => getMovieDetails(numericId, contentType),
+    enabled: !!numericId,
   });
 
-  // Movie/TV recommendations via TasteDive → TMDB (with failsafe)
-  const tmdbTitle = tmdbDetail ? getDisplayInfo(tmdbDetail as any).title : "";
-  const { data: movieTvRecs } = useQuery({
+  const tmdbTitle = detail ? getDisplayInfo(detail as any).title : "";
+  const { data: recs } = useQuery({
     queryKey: ["tastedive-recs", contentType, tmdbTitle, numericId],
-    queryFn: () => getMovieTVRecommendations(tmdbTitle, contentType as "movie" | "tv", numericId),
-    enabled: contentType !== "anime" && !!tmdbTitle,
+    queryFn: () => getMovieTVRecommendations(tmdbTitle, contentType, numericId),
+    enabled: !!tmdbTitle,
+    staleTime: 30 * 60 * 1000,
   });
-
-  // AniList query (anime only)
-  const { data: animeDetail, isLoading: animeLoading } = useQuery({
-    queryKey: ["anime-detail", numericId],
-    queryFn: () => getAnimeDetails(numericId),
-    enabled: contentType === "anime" && !!numericId,
-  });
-
-  const isLoading = contentType === "anime" ? animeLoading : tmdbLoading;
 
   if (isLoading) {
     return (
@@ -62,11 +52,6 @@ const DetailsPage = () => {
     );
   }
 
-  if (contentType === "anime") {
-    return <AnimeDetailsView anime={animeDetail!} navigate={navigate} toast={toast} toggleWatchlist={toggleWatchlist} isInWatchlist={isInWatchlist} />;
-  }
-
-  const detail = tmdbDetail;
   if (!detail) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -96,7 +81,7 @@ const DetailsPage = () => {
       first_air_date: detail.first_air_date,
       genre_ids: detail.genres.map((g) => g.id),
     } as any;
-    const added = toggleWatchlist(m, contentType as "movie" | "tv");
+    const added = toggleWatchlist(m, contentType);
     toast({ title: added ? "Added to Library" : "Removed from Library" });
   };
 
@@ -144,29 +129,18 @@ const DetailsPage = () => {
           <Button
             className="flex-1 gap-1.5"
             onClick={() => {
-              if (contentType === "movie") {
-                navigate(`/player/movie/${numericId}`);
-              } else {
-                navigate(`/player/tv/${numericId}?season=1&episode=1`);
-              }
+              if (contentType === "movie") navigate(`/player/movie/${numericId}`);
+              else navigate(`/player/tv/${numericId}?season=1&episode=1`);
             }}
           >
             <Play className="w-4 h-4 fill-current" />
             Watch Now
           </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5"
-            onClick={handleToggleWatchlist}
-          >
+          <Button variant="outline" className="gap-1.5" onClick={handleToggleWatchlist}>
             {inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             <span className="hidden md:inline">{inWatchlist ? "Added" : "Add to Library"}</span>
           </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => setDownloadOpen(true)}
-          >
+          <Button variant="outline" className="gap-1.5" onClick={() => setDownloadOpen(true)}>
             <Download className="w-4 h-4" />
           </Button>
         </div>
@@ -190,163 +164,23 @@ const DetailsPage = () => {
         )}
       </div>
 
-      {movieTvRecs && movieTvRecs.length > 0 && (
+      <div className="mt-8">
+        <CastRow id={detail.id} mediaType={contentType} />
+      </div>
+
+      {recs && recs.length > 0 && (
         <div className="mt-8">
-          <MovieRow title="More Like This" movies={movieTvRecs} mediaType={contentType as "movie" | "tv"} />
+          <MovieRow title="More Like This" movies={recs} mediaType={contentType} />
         </div>
       )}
 
       <DownloadModal
         open={downloadOpen}
         onClose={() => setDownloadOpen(false)}
-        type={contentType as "movie" | "tv"}
+        type={contentType}
         externalId={detail.id}
         title={title}
         year={year ? Number(year) : null}
-      />
-    </div>
-  );
-};
-
-// Anime sub-view
-interface AnimeDetailsViewProps {
-  anime: AnimeItem;
-  navigate: ReturnType<typeof useNavigate>;
-  toast: ReturnType<typeof useToast>["toast"];
-  toggleWatchlist: any;
-  isInWatchlist: (id: number, mediaType?: string) => boolean;
-}
-
-const AnimeDetailsView = ({ anime, navigate, toast, toggleWatchlist, isInWatchlist }: AnimeDetailsViewProps) => {
-  const [animeDownloadOpen, setAnimeDownloadOpen] = useState(false);
-
-  const { data: animeRecs } = useQuery({
-    queryKey: ["anime-recs-merged", anime?.id, anime?.title],
-    queryFn: () => getAnimeRecommendationsFromTasteDive(anime!.title, anime!.id),
-    enabled: !!anime,
-  });
-
-  if (!anime) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-muted-foreground">Anime not found</p>
-      </div>
-    );
-  }
-
-  const inWatchlist = isInWatchlist(anime.id, "anime");
-
-  const handlePlayEpisode = (_season: number, episode: number) => {
-    navigate(`/player/anime/${anime.id}?season=1&episode=${episode}`);
-  };
-
-  const handleToggleWatchlist = () => {
-    const m = {
-      id: anime.id,
-      title: anime.title,
-      overview: anime.description,
-      poster_path: anime.poster,
-      backdrop_path: anime.banner,
-      vote_average: anime.rating,
-      release_date: anime.year ? `${anime.year}-01-01` : "",
-      genre_ids: [],
-      media_type: "anime",
-      _isAnimeCard: true,
-    } as any;
-    const added = toggleWatchlist(m, "anime");
-    toast({ title: added ? "Added to Library" : "Removed from Library" });
-  };
-
-  return (
-    <div className="min-h-screen pb-24">
-      <div className="relative h-[50vh] overflow-hidden">
-        {anime.banner ? (
-          <img src={anime.banner} alt={anime.title} className="w-full h-full object-cover" />
-        ) : (
-          <img src={anime.poster} alt={anime.title} className="w-full h-full object-cover" />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
-        <button
-          onClick={() => navigate(-1)}
-          className="absolute top-4 left-4 z-10 w-9 h-9 rounded-full bg-background/60 backdrop-blur flex items-center justify-center text-foreground hover:bg-background/80 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="px-4 -mt-20 relative z-10 space-y-4">
-        <h1 className="text-3xl font-extrabold text-foreground leading-tight">{anime.title}</h1>
-
-        <div className="flex items-center gap-3 text-sm">
-          {anime.year && <span className="text-muted-foreground">{anime.year}</span>}
-          <div className="flex items-center gap-1 text-primary">
-            <Star className="w-4 h-4 fill-primary" />
-            <span className="font-semibold">{anime.rating.toFixed(1)}</span>
-          </div>
-          {anime.episodes > 0 && <span className="text-muted-foreground">{anime.episodes} Episodes</span>}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {anime.genres.map((genre) => (
-            <span key={genre} className="px-3 py-1 rounded-full bg-muted text-xs font-medium text-muted-foreground">
-              {genre}
-            </span>
-          ))}
-        </div>
-
-        <p className="text-sm text-muted-foreground leading-relaxed">{anime.description}</p>
-
-        <div className="flex gap-2">
-          <Button
-            className="flex-1 gap-1.5"
-            onClick={() => handlePlayEpisode(1, 1)}
-            disabled={anime.status === "NOT_YET_RELEASED"}
-          >
-            <Play className="w-4 h-4 fill-current" />
-            {anime.status === "NOT_YET_RELEASED" ? "Coming Soon" : "Watch Now"}
-          </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5"
-            onClick={handleToggleWatchlist}
-          >
-            {inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            <span className="hidden md:inline">{inWatchlist ? "Added" : "Add to Library"}</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => setAnimeDownloadOpen(true)}
-          >
-            <Download className="w-4 h-4" />
-          </Button>
-        </div>
-
-        <div className="pt-2">
-          <h2 className="text-lg font-bold text-foreground mb-2">Episodes</h2>
-          <AnimeEpisodeList
-            animeId={anime.id}
-            seasonNumber={1}
-            totalEpisodes={anime.episodes}
-            onPlayEpisode={handlePlayEpisode}
-          />
-        </div>
-      </div>
-
-      {animeRecs && animeRecs.length > 0 && (
-        <div className="mt-8">
-          <MovieRow title="More Like This" movies={animeRecs} mediaType="anime" />
-        </div>
-      )}
-
-      <DownloadModal
-        open={animeDownloadOpen}
-        onClose={() => setAnimeDownloadOpen(false)}
-        type="anime"
-        externalId={anime.id}
-        title={anime.title}
-        year={anime.year}
-        totalEpisodes={anime.episodes}
       />
     </div>
   );
