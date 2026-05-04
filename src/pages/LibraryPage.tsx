@@ -4,7 +4,7 @@ import { useLibrary } from "@/lib/library";
 import MovieCard from "@/components/MovieCard";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 
-type Filter = "all" | "movie" | "tv" | "anime";
+type Filter = "all" | "movie" | "tv";
 
 const LibraryPage = () => {
   const { watchlist } = useLibrary();
@@ -14,7 +14,6 @@ const LibraryPage = () => {
     { label: "All", value: "all" },
     { label: "Movies", value: "movie" },
     { label: "Series", value: "tv" },
-    { label: "Anime", value: "anime" },
   ];
 
   const filtered = watchlist.filter((m) => {
@@ -52,7 +51,7 @@ const LibraryPage = () => {
         {filtered.length > 0 ? (
           <div className="grid grid-cols-3 gap-3">
             {filtered.map((m) => (
-              <MovieCard key={`${m.id}-${m.mediaType}`} movie={m as any} mediaType={m.mediaType as "movie" | "tv" | "anime"} compact />
+              <MovieCard key={`${m.id}-${m.mediaType}`} movie={m as any} mediaType={(m.mediaType === "anime" ? "tv" : m.mediaType) as "movie" | "tv"} compact />
             ))}
           </div>
         ) : (
