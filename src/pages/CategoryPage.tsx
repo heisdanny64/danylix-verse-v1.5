@@ -2,35 +2,27 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
-import { CATEGORY_MAP, type TMDBMovie } from "@/lib/tmdb";
-import { getTrendingAnime, getPopularAnime, animeToCard } from "@/lib/anilist";
+import { CATEGORY_MAP, getTMDBAnimeCandidates, type TMDBMovie } from "@/lib/tmdb";
+import { filterVerifiedAnime } from "@/lib/animeVerify";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const MAX_ITEMS = 30;
 
-// Map category slugs to Discover genre chips
 const SLUG_TO_DISCOVER_GENRES: Record<string, string> = {
   action: "action",
   horror: "horror",
   comedy: "comedy",
   "romance-drama": "romance,drama",
   animation: "animation",
-  "trending-anime": "anime",
-  "popular-anime": "anime",
+  anime: "anime",
 };
 
-// Anime category configs
-const ANIME_CATEGORIES: Record<string, { title: string; mediaType: "anime"; fetchFn: (page?: number) => Promise<TMDBMovie[]> }> = {
-  "trending-anime": {
-    title: "Trending Anime",
-    mediaType: "anime",
-    fetchFn: async (page = 1) => (await getTrendingAnime(page)).map(animeToCard),
-  },
-  "popular-anime": {
-    title: "Popular Anime",
-    mediaType: "anime",
-    fetchFn: async (page = 1) => (await getPopularAnime(page)).map(animeToCard),
+const ANIME_CATEGORIES: Record<string, { title: string; mediaType: "tv"; fetchFn: (page?: number) => Promise<TMDBMovie[]> }> = {
+  anime: {
+    title: "Anime",
+    mediaType: "tv",
+    fetchFn: async (page = 1) => filterVerifiedAnime(await getTMDBAnimeCandidates(page)),
   },
 };
 
@@ -55,10 +47,7 @@ const CategoryPage = () => {
     queryKey: ["category", slug, page],
     queryFn: async () => {
       let results = await config!.fetchFn(page);
-      if (!results || results.length === 0) {
-        setHasMore(false);
-        return results;
-      }
+      if (!results || results.length === 0) { setHasMore(false); return results; }
       if (postProcess) results = postProcess(results);
       setAllMovies((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
@@ -72,20 +61,15 @@ const CategoryPage = () => {
     enabled: !!config && hasMore,
   });
 
-  // Infinite scroll via IntersectionObserver
   const loadMore = useCallback(() => {
-    if (!isFetching && hasMore) {
-      setPage((p) => p + 1);
-    }
+    if (!isFetching && hasMore) setPage((p) => p + 1);
   }, [isFetching, hasMore]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) loadMore();
-      },
+      (entries) => { if (entries[0].isIntersecting) loadMore(); },
       { rootMargin: "200px" }
     );
     observer.observe(sentinel);
@@ -122,12 +106,11 @@ const CategoryPage = () => {
             ))
           : allMovies.map((movie) => (
               <div key={movie.id} className="w-full">
-                <MovieCard movie={movie} mediaType={isMixed ? undefined : mediaType as any} compact />
+                <MovieCard movie={movie} mediaType={isMixed ? undefined : (mediaType as "movie" | "tv")} compact />
               </div>
             ))}
       </div>
 
-      {/* Infinite scroll sentinel */}
       {!loadingFirstPage && hasMore && (
         <div ref={sentinelRef} className="flex justify-center px-4 py-6">
           {isFetching && <Loader2 className="w-6 h-6 animate-spin text-primary" />}
@@ -138,11 +121,7 @@ const CategoryPage = () => {
         <div className="flex justify-center px-4 py-8">
           <button
             onClick={() =>
-              navigate(
-                discoverGenres
-                  ? `/recommendations?genres=${discoverGenres}`
-                  : "/recommendations",
-              )
+              navigate(discoverGenres ? `/recommendations?genres=${discoverGenres}` : "/recommendations")
             }
             className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
           >

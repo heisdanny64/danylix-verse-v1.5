@@ -1,34 +1,49 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { searchTMDB } from "@/lib/tmdb";
-import { searchAniList, animeToCard } from "@/lib/anilist";
+import { searchGifted } from "@/services/giftedApi";
+import { tmdbToMediaItem, giftedToMediaItem, mediaToTmdbCard, normalizeTitle, variantKey, type MediaItem } from "@/lib/media";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
-type FilterType = "all" | "movie" | "tv" | "anime";
+type FilterType = "all" | "movie" | "tv" | "gifted";
 
-function deduplicateResults(tmdbResults: any[], animeResults: any[]) {
-  const animeTitles = new Set(
-    animeResults.map((a) => a.title?.toLowerCase().trim()).filter(Boolean)
-  );
-  const filtered = tmdbResults.filter((t) => {
-    const title = (t.title || t.name || "").toLowerCase().trim();
-    return !animeTitles.has(title);
+function mergeResults(tmdb: MediaItem[], gifted: MediaItem[]): MediaItem[] {
+  const tmdbKeys = new Set(tmdb.map((t) => normalizeTitle(t.title)));
+  const tmdbVariants = new Set(tmdb.map((t) => variantKey(t.title)));
+  const giftedFiltered = gifted.filter((g) => {
+    const n = normalizeTitle(g.title);
+    const v = variantKey(g.title);
+    // Drop only if BOTH base and variant key match — keeps "Naruto [English]"
+    return !(tmdbKeys.has(n) && tmdbVariants.has(v));
   });
-  return [...filtered, ...animeResults];
+  return [...tmdb, ...giftedFiltered];
 }
 
 const SearchPage = () => {
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialQ = searchParams.get("q") || "";
+  const [query, setQuery] = useState(initialQ);
   const [filter, setFilter] = useState<FilterType>("all");
   const { user } = useAuth();
 
-  // Persist meaningful searches to history (debounced + only when results are likely)
+  // Sync query → URL (debounced)
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const next = new URLSearchParams(searchParams);
+      if (query.trim()) next.set("q", query.trim());
+      else next.delete("q");
+      setSearchParams(next, { replace: true });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist meaningful searches
   useEffect(() => {
     if (!user?.id) return;
     const trimmed = query.trim();
@@ -46,33 +61,32 @@ const SearchPage = () => {
     staleTime: 1000 * 60,
   });
 
-  const { data: animeResults, isLoading: animeLoading } = useQuery({
-    queryKey: ["search-anilist", query],
-    queryFn: async () => {
-      const results = await searchAniList(query);
-      return results.map(animeToCard);
-    },
+  const { data: giftedResults, isLoading: giftedLoading } = useQuery({
+    queryKey: ["search-gifted", query],
+    queryFn: () => searchGifted(query),
     enabled: query.length > 1,
     staleTime: 1000 * 60,
   });
 
-  const isLoading = tmdbLoading || animeLoading;
+  const isLoading = tmdbLoading || giftedLoading;
 
-  const combined = deduplicateResults(tmdbResults || [], animeResults || []);
+  const tmdbItems: MediaItem[] = (tmdbResults || [])
+    .filter((r) => r.media_type === "movie" || r.media_type === "tv")
+    .map((r) => tmdbToMediaItem(r as any, r.media_type as "movie" | "tv"));
+  const giftedItems: MediaItem[] = (giftedResults || []).map(giftedToMediaItem);
+  const merged = mergeResults(tmdbItems, giftedItems);
 
-  const filtered =
-    filter === "all"
-      ? combined
-      : combined.filter((item) => {
-          const type = item.media_type || "movie";
-          return type === filter;
-        });
+  const filtered = merged.filter((m) => {
+    if (filter === "all") return true;
+    if (filter === "gifted") return m.source === "gifted";
+    return m.type === filter;
+  });
 
   const filters: { label: string; value: FilterType }[] = [
     { label: "All", value: "all" },
     { label: "Movies", value: "movie" },
     { label: "TV", value: "tv" },
-    { label: "Anime", value: "anime" },
+    { label: "Gifted", value: "gifted" },
   ];
 
   return (
@@ -94,7 +108,6 @@ const SearchPage = () => {
           </div>
         </div>
 
-        {/* Filter buttons */}
         {query.length > 1 && (
           <div className="flex gap-2">
             {filters.map((f) => (
@@ -136,9 +149,9 @@ const SearchPage = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {filtered.map((item) => (
               <MovieCard
-                key={`${item.media_type}-${item.id}`}
-                movie={item}
-                mediaType={item.media_type}
+                key={`${item.source}-${item.type}-${item.id}`}
+                movie={mediaToTmdbCard(item)}
+                mediaType={item.type}
                 compact
               />
             ))}
