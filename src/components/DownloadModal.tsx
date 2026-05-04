@@ -10,7 +10,6 @@ import { Download, AlertCircle, Loader2 } from "lucide-react";
 import {
   findBestMatch,
   getGiftedSources,
-  resolveAnimeEpisode,
   formatBytes,
   type GiftedSource,
 } from "@/services/giftedApi";
@@ -20,11 +19,10 @@ import { cn } from "@/lib/utils";
 interface DownloadModalProps {
   open: boolean;
   onClose: () => void;
-  type: "movie" | "tv" | "anime";
+  type: "movie" | "tv";
   externalId: number;
   title: string;
   year?: number | null;
-  /** Anime: total episode count */
   totalEpisodes?: number;
   season?: number;
   episode?: number;
@@ -62,7 +60,7 @@ export default function DownloadModal({
   year,
   totalEpisodes,
 }: DownloadModalProps) {
-  const isSeries = type === "tv" || type === "anime";
+  const isSeries = type === "tv";
 
   // ---------- MOVIE MODE (unchanged behavior) ----------
   const [movieLoading, setMovieLoading] = useState(false);
@@ -146,11 +144,7 @@ export default function DownloadModal({
     if (!open || !isSeries) return;
     let cancelled = false;
     (async () => {
-      if (type === "anime") {
-        const total = totalEpisodes && totalEpisodes > 0 ? totalEpisodes : 12;
-        setSeasons([{ season_number: 1, name: "Season 1", episode_count: total }]);
-      } else {
-        try {
+      try {
           const detail = await getMovieDetails(externalId, "tv");
           if (cancelled) return;
           const seasonList = (detail.seasons || [])
@@ -160,7 +154,6 @@ export default function DownloadModal({
         } catch {
           setSeasons([{ season_number: 1, name: "Season 1", episode_count: 12 }]);
         }
-      }
     })();
     return () => { cancelled = true; };
   }, [open, isSeries, type, externalId, totalEpisodes]);
