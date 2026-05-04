@@ -20,12 +20,13 @@ interface DownloadModalProps {
   open: boolean;
   onClose: () => void;
   type: "movie" | "tv";
-  externalId: number;
+  externalId: number | string;
   title: string;
   year?: number | null;
   totalEpisodes?: number;
   season?: number;
   episode?: number;
+  source?: "tmdb" | "gifted";
 }
 
 interface EpSourceState {
@@ -59,10 +60,11 @@ export default function DownloadModal({
   title,
   year,
   totalEpisodes,
+  source = "tmdb",
 }: DownloadModalProps) {
   const isSeries = type === "tv";
 
-  // ---------- MOVIE MODE (unchanged behavior) ----------
+  // ---------- MOVIE MODE ----------
   const [movieLoading, setMovieLoading] = useState(false);
   const [movieSources, setMovieSources] = useState<GiftedSource[]>([]);
   const [movieError, setMovieError] = useState<string | null>(null);
@@ -101,12 +103,16 @@ export default function DownloadModal({
   // Resolve subjectId once when opened
   useEffect(() => {
     if (!open) return;
+    if (source === "gifted") {
+      setSubjectId(externalId);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setResolving(true);
       setResolveError(null);
       try {
-        const sid = await findBestMatch({ title, year: year ?? null, type, externalId });
+        const sid = await findBestMatch({ title, year: year ?? null, type, externalId: Number(externalId) });
         if (cancelled) return;
         if (!sid) { setResolveError("Couldn't find this title in the catalog."); return; }
         setSubjectId(sid);
@@ -115,7 +121,7 @@ export default function DownloadModal({
       }
     })();
     return () => { cancelled = true; };
-  }, [open, type, externalId, title, year]);
+  }, [open, type, externalId, title, year, source]);
 
   // ===== MOVIE: fetch sources =====
   useEffect(() => {
@@ -142,10 +148,14 @@ export default function DownloadModal({
   // ===== SERIES: load seasons =====
   useEffect(() => {
     if (!open || !isSeries) return;
+    if (source === "gifted") {
+      setSeasons([{ season_number: 1, name: "Season 1", episode_count: 1 }]);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-          const detail = await getMovieDetails(externalId, "tv");
+          const detail = await getMovieDetails(Number(externalId), "tv");
           if (cancelled) return;
           const seasonList = (detail.seasons || [])
             .filter((s) => s.season_number > 0)
@@ -156,15 +166,22 @@ export default function DownloadModal({
         }
     })();
     return () => { cancelled = true; };
-  }, [open, isSeries, type, externalId, totalEpisodes]);
+  }, [open, isSeries, type, externalId, totalEpisodes, source]);
 
   // ===== SERIES: load episodes for current season =====
   useEffect(() => {
     if (!open || !isSeries || !seasons.length) return;
+    if (source === "gifted") {
+      setEpisodes([{ episode_number: 1, name: "Episode 1" }]);
+      setSelectedEpisodes(new Set());
+      setEpSources({});
+      setChosenQuality(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-          const sd = await getSeasonDetails(externalId, season);
+          const sd = await getSeasonDetails(Number(externalId), season);
           if (cancelled) return;
           setEpisodes(
             (sd.episodes || []).map((e) => ({ episode_number: e.episode_number, name: e.name })),
@@ -180,7 +197,7 @@ export default function DownloadModal({
       setChosenQuality(null);
     })();
     return () => { cancelled = true; };
-  }, [open, isSeries, type, externalId, season, seasons]);
+  }, [open, isSeries, type, externalId, season, seasons, source]);
 
   // ===== SERIES: probe first episode for quality list =====
   useEffect(() => {
@@ -200,7 +217,6 @@ export default function DownloadModal({
       }
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isSeries, subjectId, episodes, type, externalId, season]);
 
   // ===== SERIES: lazily fetch sources for selected episodes (so size shows) =====
@@ -219,7 +235,6 @@ export default function DownloadModal({
         }
       })();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEpisodes, subjectId, isSeries]);
 
   const availableQualities = useMemo(() => {
@@ -259,7 +274,6 @@ export default function DownloadModal({
       setDownloading({ idx: i + 1, total: eps.length, ep: epNum });
       let s = sourceForEpisode(epNum);
       if (!s) {
-        // Force-fetch
         try {
           const data = await getGiftedSources(subjectId, season, epNum);
           const sorted = sortByQualityDesc(data.results || []);
@@ -270,7 +284,6 @@ export default function DownloadModal({
       const url = s?.download_url || s?.stream_url;
       if (url) {
         triggerDownload(url);
-        // Stagger to give the browser breathing room
         await new Promise((r) => setTimeout(r, 800));
       }
     }
@@ -278,7 +291,6 @@ export default function DownloadModal({
     setSelectedEpisodes(new Set());
   };
 
-  // ---------- RENDER ----------
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
@@ -287,175 +299,149 @@ export default function DownloadModal({
           <p className="text-sm text-muted-foreground truncate">{title}</p>
         </DialogHeader>
 
-        {/* Resolution / catalog match status */}
         {(resolving) && (
-          <div className="space-y-2 mt-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full rounded-lg" />
-            ))}
+          <div className="py-12 flex flex-col items-center justify-center space-y-4">
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            <p className="text-sm text-muted-foreground">Searching catalog...</p>
           </div>
         )}
 
-        {!resolving && resolveError && (
-          <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
-            <AlertCircle className="w-8 h-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">{resolveError}</p>
+        {resolveError && (
+          <div className="py-12 flex flex-col items-center justify-center space-y-4 text-center">
+            <AlertCircle className="w-12 h-12 text-destructive" />
+            <p className="text-sm font-medium">{resolveError}</p>
+            <Button variant="outline" onClick={onClose}>Close</Button>
           </div>
         )}
 
-        {/* MOVIE MODE */}
-        {!resolving && !resolveError && !isSeries && (
-          <div className="space-y-2 mt-2 overflow-y-auto">
-            {movieLoading && (
-              <>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full rounded-lg" />
-                ))}
-              </>
-            )}
-            {!movieLoading && movieError && (
-              <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
-                <AlertCircle className="w-8 h-8 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">{movieError}</p>
-              </div>
-            )}
-            {!movieLoading && !movieError && movieSources.map((s, i) => (
-              <div
-                key={`${s.quality}-${i}`}
-                className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-card"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">{s.quality}</p>
-                  <p className="text-xs text-muted-foreground">{formatBytes(s.size)}</p>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => triggerDownload(s.download_url || s.stream_url)}
-                  disabled={!s.download_url && !s.stream_url}
-                  className="gap-1.5"
-                >
-                  <Download className="w-4 h-4" />
-                  Download
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* SERIES MODE */}
-        {!resolving && !resolveError && isSeries && (
-          <>
-            {/* Quality pills */}
-            <div className="mt-3 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Quality</p>
-              <div className="flex flex-wrap gap-2">
-                {availableQualities.length === 0 ? (
-                  <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Detecting…
-                  </span>
+        {!resolving && !resolveError && subjectId && (
+          <div className="flex-1 overflow-y-auto min-h-0 py-2 space-y-6">
+            {!isSeries ? (
+              <div className="space-y-3">
+                {movieLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
+                  </div>
+                ) : movieError ? (
+                  <p className="text-center py-8 text-sm text-muted-foreground">{movieError}</p>
                 ) : (
-                  availableQualities.map((q) => (
+                  movieSources.map((s, i) => (
                     <button
-                      key={q}
-                      type="button"
-                      onClick={() => setChosenQuality(q)}
-                      className={cn(
-                        "h-8 px-3 rounded-full text-xs font-medium transition-colors",
-                        chosenQuality === q
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-card border border-border text-muted-foreground hover:bg-muted",
-                      )}
+                      key={i}
+                      onClick={() => triggerDownload(s.download_url || s.stream_url)}
+                      className="w-full flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors group"
                     >
-                      {q}
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                          <Download className="w-5 h-5" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-bold">{s.quality}</p>
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{formatBytes(s.size)}</p>
+                        </div>
+                      </div>
+                      <div className="text-xs font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity">Download</div>
                     </button>
                   ))
                 )}
               </div>
-            </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Season</label>
+                    <Select value={String(season)} onValueChange={(v) => setSeason(Number(v))}>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {seasons.map((s) => (
+                          <SelectItem key={s.season_number} value={String(s.season_number)}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">Quality</label>
+                    <Select value={chosenQuality || ""} onValueChange={setChosenQuality}>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue placeholder="Select quality" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableQualities.map((q) => (
+                          <SelectItem key={q} value={q}>{q}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-            {/* Season dropdown */}
-            {seasons.length > 1 && (
-              <div className="mt-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Season</p>
-                <Select value={String(season)} onValueChange={(v) => setSeason(Number(v))}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {seasons.map((s) => (
-                      <SelectItem key={s.season_number} value={String(s.season_number)}>
-                        {s.name} ({s.episode_count} eps)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Episodes</h4>
+                    <button onClick={toggleAll} className="text-xs font-bold text-primary hover:underline">
+                      {allSelected ? "Deselect All" : "Select All"}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {episodes.map((ep) => {
+                      const s = sourceForEpisode(ep.episode_number);
+                      const loading = epSources[ep.episode_number]?.loading;
+                      return (
+                        <div
+                          key={ep.episode_number}
+                          onClick={() => toggleEpisode(ep.episode_number)}
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
+                            selectedEpisodes.has(ep.episode_number)
+                              ? "bg-primary/5 border-primary/30"
+                              : "bg-muted/30 border-transparent hover:bg-muted/50"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Checkbox checked={selectedEpisodes.has(ep.episode_number)} />
+                            <div className="text-left">
+                              <p className="text-sm font-medium">Episode {ep.episode_number}</p>
+                              {ep.name && <p className="text-[10px] text-muted-foreground line-clamp-1">{ep.name}</p>}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            {loading ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                            ) : s ? (
+                              <p className="text-[10px] font-bold text-muted-foreground">{formatBytes(s.size)}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
+          </div>
+        )}
 
-            {/* Episode list */}
-            <div className="mt-3 flex-1 overflow-y-auto rounded-lg border border-border">
-              <label className="flex items-center gap-3 px-3 h-11 border-b border-border bg-muted/30 sticky top-0">
-                <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
-                <span className="text-sm font-medium">Select All ({episodes.length})</span>
-              </label>
-              <div className="divide-y divide-border">
-                {episodes.map((ep) => {
-                  const checked = selectedEpisodes.has(ep.episode_number);
-                  const epState = epSources[ep.episode_number];
-                  const epSource = sourceForEpisode(ep.episode_number);
-                  return (
-                    <label
-                      key={ep.episode_number}
-                      className="flex items-center gap-3 px-3 h-12 cursor-pointer hover:bg-muted/30"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={() => toggleEpisode(ep.episode_number)}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground truncate">
-                          Episode {ep.episode_number}
-                          {ep.name ? ` · ${ep.name}` : ""}
-                        </p>
-                      </div>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {epState?.loading ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : epSource ? (
-                          `${epSource.quality} · ${formatBytes(epSource.size)}`
-                        ) : (
-                          ""
-                        )}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Download button */}
-            <div className="mt-3 space-y-2">
-              {downloading && (
-                <div className="text-xs text-center text-muted-foreground">
-                  Downloading {downloading.idx}/{downloading.total} · Episode {downloading.ep}
-                </div>
-              )}
-              <Button
-                className="w-full gap-1.5"
-                onClick={startDownloads}
-                disabled={selectedEpisodes.size === 0 || !!downloading}
-              >
-                {downloading ? (
+        {isSeries && !resolving && !resolveError && subjectId && (
+          <div className="pt-4 border-t">
+            <Button
+              className="w-full rounded-xl h-12 font-bold gap-2"
+              disabled={selectedEpisodes.size === 0 || !!downloading}
+              onClick={startDownloads}
+            >
+              {downloading ? (
+                <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
+                  Downloading {downloading.idx}/{downloading.total} (Ep {downloading.ep})
+                </>
+              ) : (
+                <>
                   <Download className="w-4 h-4" />
-                )}
-                {downloading
-                  ? "Downloading…"
-                  : `Download ${selectedEpisodes.size || ""} ${selectedEpisodes.size === 1 ? "episode" : "episodes"}`.trim()}
-              </Button>
-            </div>
-          </>
+                  Download {selectedEpisodes.size} Episode{selectedEpisodes.size !== 1 ? "s" : ""}
+                </>
+              )}
+            </Button>
+          </div>
         )}
       </DialogContent>
     </Dialog>
