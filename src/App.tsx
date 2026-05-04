@@ -14,6 +14,7 @@ import RecommendationsPage from "./pages/RecommendationsPage.tsx";
 import LibraryPage from "./pages/LibraryPage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
+import GiftedDetailsPage from "./pages/GiftedDetailsPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/details/:type/:id" element={<DetailsPage />} />
+            <Route path="/details/gifted/:id" element={<GiftedDetailsPage />} />
             <Route path="/player/:type/:id" element={<Player />} />
             <Route path="/category/:slug" element={<CategoryPage />} />
             <Route path="/recommendations" element={<RecommendationsPage />} />
@@ -38,6 +40,8 @@ const App = () => (
             {/* Legacy redirects */}
             <Route path="/movie/movie-:id" element={<LegacyMovieRedirect />} />
             <Route path="/series/:id" element={<LegacySeriesRedirect />} />
+            <Route path="/details/anime/:id" element={<LegacyAnimeRedirect />} />
+            <Route path="/player/anime/:id" element={<LegacyAnimePlayerRedirect />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           <BottomNav />
@@ -58,6 +62,16 @@ const LegacyMovieRedirect = () => {
 const LegacySeriesRedirect = () => {
   const { id } = useParams();
   return <Navigate to={`/details/tv/${id}`} replace />;
+};
+
+const LegacyAnimeRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={`/details/tv/${id}`} replace />;
+};
+
+const LegacyAnimePlayerRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={`/player/tv/${id}?season=1&episode=1`} replace />;
 };
 
 export default App;
