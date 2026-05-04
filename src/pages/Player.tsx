@@ -508,21 +508,7 @@ export default function Player() {
       const dur = v.duration;
       if (!dur || !cur) return;
       const pct = Math.min(100, Math.round((cur / dur) * 100));
-      if (isAnime && animeDetails) {
-        const m = {
-          id: animeDetails.id,
-          title: animeDetails.title,
-          overview: animeDetails.description,
-          poster_path: animeDetails.poster,
-          backdrop_path: animeDetails.banner,
-          vote_average: animeDetails.rating,
-          release_date: animeDetails.year ? `${animeDetails.year}-01-01` : "",
-          genre_ids: [],
-          media_type: "anime",
-          _isAnimeCard: true,
-        } as any;
-        updateProgress(m, "anime", pct, 1, episode, cur, dur);
-      } else if (tmdbDetails) {
+      if (tmdbDetails) {
         const m = {
           id: tmdbDetails.id,
           title: tmdbDetails.title,
@@ -539,7 +525,7 @@ export default function Player() {
         updateProgress(m, contentType as "movie" | "tv", pct, season, episode, cur, dur);
       }
     };
-  }, [isAnime, animeDetails, tmdbDetails, contentType, season, episode, updateProgress]);
+  }, [tmdbDetails, contentType, season, episode, updateProgress]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -633,12 +619,8 @@ export default function Player() {
   const goToEpisode = useCallback((delta: 1 | -1) => {
     const next = episode + delta;
     cancelAutoNext();
-    if (isAnime) {
-      navigate(`/player/anime/${numericId}?season=1&episode=${next}`, { replace: true });
-    } else {
-      navigate(`/player/tv/${numericId}?season=${season}&episode=${next}`, { replace: true });
-    }
-  }, [episode, isAnime, navigate, numericId, season, cancelAutoNext]);
+    navigate(`/player/tv/${numericId}?season=${season}&episode=${next}`, { replace: true });
+  }, [episode, navigate, numericId, season, cancelAutoNext]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
