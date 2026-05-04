@@ -163,11 +163,7 @@ export default function DownloadModal({
     if (!open || !isSeries || !seasons.length) return;
     let cancelled = false;
     (async () => {
-      if (type === "anime") {
-        const count = seasons[0]?.episode_count ?? 12;
-        setEpisodes(Array.from({ length: count }, (_, i) => ({ episode_number: i + 1 })));
-      } else {
-        try {
+      try {
           const sd = await getSeasonDetails(externalId, season);
           if (cancelled) return;
           setEpisodes(
@@ -179,7 +175,6 @@ export default function DownloadModal({
             Array.from({ length: sCfg?.episode_count ?? 12 }, (_, i) => ({ episode_number: i + 1 })),
           );
         }
-      }
       setSelectedEpisodes(new Set());
       setEpSources({});
       setChosenQuality(null);
@@ -195,8 +190,7 @@ export default function DownloadModal({
     setEpSources((prev) => ({ ...prev, [firstEp]: { loading: true, sources: [] } }));
     (async () => {
       try {
-        const apiEp = type === "anime" ? await resolveAnimeEpisode(externalId, firstEp) : firstEp;
-        const data = await getGiftedSources(subjectId, type === "tv" ? season : undefined, apiEp);
+        const data = await getGiftedSources(subjectId, season, firstEp);
         if (cancelled) return;
         const sorted = sortByQualityDesc(data.results || []);
         setEpSources((prev) => ({ ...prev, [firstEp]: { loading: false, sources: sorted } }));
@@ -217,8 +211,7 @@ export default function DownloadModal({
       setEpSources((prev) => ({ ...prev, [epNum]: { loading: true, sources: [] } }));
       (async () => {
         try {
-          const apiEp = type === "anime" ? await resolveAnimeEpisode(externalId, epNum) : epNum;
-          const data = await getGiftedSources(subjectId, type === "tv" ? season : undefined, apiEp);
+          const data = await getGiftedSources(subjectId, season, epNum);
           const sorted = sortByQualityDesc(data.results || []);
           setEpSources((prev) => ({ ...prev, [epNum]: { loading: false, sources: sorted } }));
         } catch {
@@ -268,8 +261,7 @@ export default function DownloadModal({
       if (!s) {
         // Force-fetch
         try {
-          const apiEp = type === "anime" ? await resolveAnimeEpisode(externalId, epNum) : epNum;
-          const data = await getGiftedSources(subjectId, type === "tv" ? season : undefined, apiEp);
+          const data = await getGiftedSources(subjectId, season, epNum);
           const sorted = sortByQualityDesc(data.results || []);
           setEpSources((prev) => ({ ...prev, [epNum]: { loading: false, sources: sorted } }));
           s = chosenQuality ? sorted.find((x) => x.quality === chosenQuality) ?? sorted[0] : sorted[0];
@@ -423,7 +415,7 @@ export default function DownloadModal({
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-foreground truncate">
                           Episode {ep.episode_number}
-                          {ep.name && type !== "anime" ? ` · ${ep.name}` : ""}
+                          {ep.name ? ` · ${ep.name}` : ""}
                         </p>
                       </div>
                       <span className="text-xs text-muted-foreground shrink-0">
