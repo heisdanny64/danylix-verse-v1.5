@@ -27,12 +27,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { getMovieDetails, getSeasonDetails, getDisplayInfo } from "@/lib/tmdb";
-import { getAnimeDetails } from "@/lib/anilist";
 import { useLibrary } from "@/lib/library";
 import {
   findBestMatch,
   getGiftedSources,
-  resolveAnimeEpisode,
   type GiftedSource,
   type GiftedSubtitle,
 } from "@/services/giftedApi";
@@ -65,8 +63,9 @@ export default function Player() {
   const { updateProgress } = useLibrary();
   const { user } = useAuth();
 
-  const contentType = (type as "movie" | "tv" | "anime") || "movie";
-  const isAnime = contentType === "anime";
+  // Anime now plays through the TV pipeline. Legacy /player/anime/* routes
+  // are redirected by App.tsx.
+  const contentType = (type as "movie" | "tv") || "movie";
   const numericId = Number(id);
   const season = Number(searchParams.get("season")) || 1;
   const episode = Number(searchParams.get("episode")) || 1;
@@ -75,12 +74,7 @@ export default function Player() {
   const { data: tmdbDetails } = useQuery({
     queryKey: ["player-detail", contentType, numericId],
     queryFn: () => getMovieDetails(numericId, contentType as "movie" | "tv"),
-    enabled: !isAnime && !!numericId,
-  });
-  const { data: animeDetails } = useQuery({
-    queryKey: ["player-anime-detail", numericId],
-    queryFn: () => getAnimeDetails(numericId),
-    enabled: isAnime && !!numericId,
+    enabled: !!numericId,
   });
   const { data: seasonData } = useQuery({
     queryKey: ["player-season", numericId, season],
@@ -88,16 +82,10 @@ export default function Player() {
     enabled: contentType === "tv" && !!numericId,
   });
 
-  const title = isAnime
-    ? animeDetails?.title || ""
-    : tmdbDetails ? getDisplayInfo(tmdbDetails as any).title : "";
-  const year = isAnime
-    ? animeDetails?.year ?? null
-    : tmdbDetails ? getDisplayInfo(tmdbDetails as any).year ?? null : null;
+  const title = tmdbDetails ? getDisplayInfo(tmdbDetails as any).title : "";
+  const year = tmdbDetails ? getDisplayInfo(tmdbDetails as any).year ?? null : null;
 
-  const totalEpisodes = isAnime
-    ? animeDetails?.episodes || 0
-    : seasonData?.episodes?.length || 0;
+  const totalEpisodes = seasonData?.episodes?.length || 0;
   const isMovie = contentType === "movie";
   const hasNext = !isMovie && (totalEpisodes === 0 || episode < totalEpisodes);
   const hasPrev = !isMovie && episode > 1;
@@ -117,19 +105,8 @@ export default function Player() {
     staleTime: 30 * 60 * 1000,
   });
 
-  // Resolve absolute episode for anime sequels
-  const { data: absEpisode } = useQuery({
-    queryKey: ["anime-abs-ep", numericId, episode],
-    queryFn: () => resolveAnimeEpisode(numericId, episode),
-    enabled: isAnime && !!numericId,
-  });
-
-  const sourceSeason = isAnime ? undefined : isMovie ? undefined : season;
-  const sourceEpisode = isAnime
-    ? absEpisode ?? episode
-    : isMovie
-      ? undefined
-      : episode;
+  const sourceSeason = isMovie ? undefined : season;
+  const sourceEpisode = isMovie ? undefined : episode;
 
   // Sources
   const {
@@ -140,7 +117,7 @@ export default function Player() {
   } = useQuery({
     queryKey: ["gifted-sources", subjectId, sourceSeason, sourceEpisode],
     queryFn: () => getGiftedSources(subjectId!, sourceSeason, sourceEpisode),
-    enabled: !!subjectId && (!isAnime || absEpisode !== undefined),
+    enabled: !!subjectId,
   });
 
   const sources: GiftedSource[] = useMemo(
