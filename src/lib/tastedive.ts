@@ -1,8 +1,13 @@
 import { searchTMDB, getSimilar, filterQuality, type TMDBMovie } from "@/lib/tmdb";
 
 const API_KEY = "1070975-DVerseMo-572562DC";
-// Use a more reliable proxy or multiple fallbacks
+/**
+ * CORS FIX: TasteDive does not send CORS headers.
+ * We use a list of proxies to ensure reliability.
+ * api.codetabs.com is currently working well for JSON responses.
+ */
 const PROXY_URLS = [
+  "https://api.codetabs.com/v1/proxy?quest=",
   "https://api.allorigins.win/raw?url=",
   "https://corsproxy.io/?url=",
 ];
@@ -32,15 +37,29 @@ function cleanTitle(title: string): string {
 
 async function getTasteDiveSuggestions(title: string, type: "movie" | "show"): Promise<string[]> {
   const clean = cleanTitle(title);
-  const targetUrl = `${BASE}?q=${encodeURIComponent(clean)}&type=${type}&limit=30&k=${API_KEY}`;
+  const params = new URLSearchParams({
+    q: clean,
+    type: type,
+    k: API_KEY,
+    limit: "20"
+  });
+  const targetUrl = `${BASE}?${params.toString()}`;
   
   for (const proxy of PROXY_URLS) {
     const url = `${proxy}${encodeURIComponent(targetUrl)}`;
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
-      const data = await res.json();
-      const results = (data?.similar?.results || data?.Similar?.Results || []).map((r: { name?: string; Name?: string }) => r.name || r.Name || "");
+      
+      const text = await res.text();
+      // Some proxies might return HTML error pages with 200 status
+      if (text.trim().startsWith("<!DOCTYPE")) continue;
+      
+      const data = JSON.parse(text);
+      // TasteDive returns { Similar: { Results: [...] } }
+      const similar = data?.Similar || data?.similar;
+      const results = (similar?.Results || similar?.results || []).map((r: { Name?: string; name?: string }) => r.Name || r.name || "");
+      
       if (results.length > 0) return results;
     } catch (e) {
       console.error(`TasteDive proxy error (${proxy}):`, e);
@@ -84,8 +103,8 @@ function pickBestMatch(
   });
   if (startsWith) return startsWith;
 
-  // 3. Fallback to first result if it's highly relevant (optional, but let's be strict for now)
-  return null;
+  // 3. If no strong match, return the first candidate of the right type if it exists
+  return candidates[0] || null;
 }
 
 export async function getMovieTVRecommendations(
