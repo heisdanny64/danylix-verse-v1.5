@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Swords, Drama, Smile, Skull, Rocket, Ghost, Heart,
-  Sparkles, Tv, FileVideo, Users, Loader2,
+  Sparkles, Tv, FileVideo, Users, Loader2, Clapperboard,
 } from "lucide-react";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type TMDBMovie } from "@/lib/tmdb";
-import { getTrendingAnime, getPopularAnime, animeToCard } from "@/lib/anilist";
+import { getTMDBAnimeCandidates } from "@/lib/tmdb";
+import { filterVerifiedAnime } from "@/lib/animeVerify";
+import { getNollywoodFromGifted } from "@/services/giftedApi";
+import { mediaToTmdbCard } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 const TMDB_API_KEY = "eb81f29c8c34e05a51e64378606495c0";
@@ -15,7 +18,7 @@ const TMDB_BASE = "https://api.themoviedb.org/3";
 
 type ChipKey =
   | "action" | "drama" | "comedy" | "thriller" | "scifi"
-  | "horror" | "romance" | "animation" | "anime" | "documentary" | "family";
+  | "horror" | "romance" | "animation" | "anime" | "documentary" | "family" | "nollywood";
 
 const CHIPS: { key: ChipKey; label: string; icon: any; tmdbGenre?: number }[] = [
   { key: "action", label: "Action", icon: Swords, tmdbGenre: 28 },
@@ -29,6 +32,7 @@ const CHIPS: { key: ChipKey; label: string; icon: any; tmdbGenre?: number }[] = 
   { key: "anime", label: "Anime", icon: Tv },
   { key: "documentary", label: "Documentary", icon: FileVideo, tmdbGenre: 99 },
   { key: "family", label: "Family", icon: Users, tmdbGenre: 10751 },
+  { key: "nollywood", label: "Nollywood", icon: Clapperboard },
 ];
 
 const MAX_CHIPS = 3;
@@ -59,6 +63,11 @@ async function tmdb<T>(path: string, params: Record<string, string>): Promise<T>
 }
 
 async function fetchDiscoverBatch(genres: ChipKey[], page: number): Promise<TMDBMovie[]> {
+  // Nollywood override: bypass TMDB entirely
+  if (genres.includes("nollywood")) {
+    const items = await getNollywoodFromGifted(page);
+    return items.map(mediaToTmdbCard) as TMDBMovie[];
+  }
   const tmdbGenres = genres
     .map((g) => CHIPS.find((c) => c.key === g)?.tmdbGenre)
     .filter(Boolean)
@@ -101,9 +110,7 @@ async function fetchDiscoverBatch(genres: ChipKey[], page: number): Promise<TMDB
   }
   if (includeAnime) {
     calls.push(
-      page % 2 === 1
-        ? getTrendingAnime(Math.ceil(page / 2)).then((a) => a.map(animeToCard))
-        : getPopularAnime(Math.ceil(page / 2)).then((a) => a.map(animeToCard)),
+      getTMDBAnimeCandidates(page).then((items) => filterVerifiedAnime(items)),
     );
   }
 
