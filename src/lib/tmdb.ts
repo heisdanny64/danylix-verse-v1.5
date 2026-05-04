@@ -259,6 +259,30 @@ export async function getHorror(page = 1) {
   return filterQuality(data.results);
 }
 
+export async function getTMDBAnimeCandidates(page = 1) {
+  const data = await tmdbFetch<{ results: TMDBMovie[] }>("/discover/tv", {
+    with_original_language: "ja",
+    with_genres: "16",
+    sort_by: "popularity.desc",
+    "vote_count.gte": "50",
+    page: String(page),
+  });
+  return filterQuality(data.results).map((r) => ({ ...r, media_type: "tv" as const }));
+}
+
+export interface TMDBCastMember {
+  id: number;
+  name: string;
+  character: string;
+  profile_path: string | null;
+  order: number;
+}
+
+export async function getCredits(id: number, mediaType: "movie" | "tv") {
+  const data = await tmdbFetch<{ cast: TMDBCastMember[] }>(`/${mediaType}/${id}/credits`);
+  return (data.cast || []).slice(0, 20);
+}
+
 export async function searchTMDB(query: string) {
   const data = await tmdbFetch<{ results: TMDBMovie[] }>("/search/multi", { query });
   return data.results.filter((r) => r.media_type === "movie" || r.media_type === "tv");
