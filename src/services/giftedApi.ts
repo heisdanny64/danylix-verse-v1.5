@@ -32,7 +32,7 @@ interface GiftedSourcesResponse {
   subtitles?: GiftedSubtitle[];
 }
 
-const SUBJECT_CACHE_KEY = "dverse_gifted_subject_cache_v2";
+const SUBJECT_CACHE_KEY = "dverse_gifted_subject_cache_v3";
 
 function loadCache<T extends Record<string, any>>(key: string): T {
   try {
@@ -122,10 +122,15 @@ export interface MatchOptions {
 export async function findBestMatch(opts: MatchOptions): Promise<string | number | null> {
   const cacheKey = `${opts.type || "x"}:${opts.externalId}`;
   const cache = loadCache<Record<string, string | number | null>>(SUBJECT_CACHE_KEY);
-  if (cacheKey in cache) return cache[cacheKey];
+  // Only honor positive cached matches. Re-try when previously null so a transient
+  // upstream miss doesn't permanently disable streaming for a title.
+  if (cacheKey in cache && cache[cacheKey] != null) return cache[cacheKey];
 
   const queries = Array.from(new Set([opts.title, normalizeTitle(opts.title)].filter(Boolean)));
   let best: { id: string | number; score: number } | null = null;
+  let exact: { id: string | number; score: number } | null = null;
+  const queryHasVariant = /\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/i.test(opts.title || "");
+  const targetNorm = normalizeTitle(opts.title);
 
   for (const q of queries) {
     const results = await searchGifted(q);
@@ -135,6 +140,16 @@ export async function findBestMatch(opts: MatchOptions): Promise<string | number
       if (sim < 0.4) continue; // pre-filter
 
       let score = sim;
+
+      const rTitle = r.title || "";
+      // Penalize variant tokens unless user asked for them.
+      if (!queryHasVariant && /\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/i.test(rTitle)) {
+        score -= 0.25;
+      }
+      // Penalize season fragments (S1, Season 2, etc.).
+      if (/\b(s\d+(\s*-\s*s?\d+)?|season\s?\d+)\b/i.test(rTitle)) {
+        score -= 0.4;
+      }
 
       // Year
       if (opts.year) {
@@ -152,14 +167,22 @@ export async function findBestMatch(opts: MatchOptions): Promise<string | number
         if (r.type !== opts.type) score -= 0.3;
       }
 
+      // Track best exact-normalized title match separately so we can prefer it.
+      if (normalizeTitle(rTitle) === targetNorm) {
+        if (!exact || score > exact.score) exact = { id: r.subjectId, score };
+      }
+
       if (!best || score > best.score) best = { id: r.subjectId, score };
     }
     if (best && best.score >= 0.95) break;
   }
 
-  const picked = best && best.score >= 0.7 ? best.id : null;
-  cache[cacheKey] = picked;
-  saveCache(SUBJECT_CACHE_KEY, cache);
+  const winner = exact ?? best;
+  const picked = winner && winner.score >= 0.7 ? winner.id : null;
+  if (picked != null) {
+    cache[cacheKey] = picked;
+    saveCache(SUBJECT_CACHE_KEY, cache);
+  }
   return picked;
 }
 
@@ -199,6 +222,70 @@ export function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
   return `${mb.toFixed(2)} MB`;
+}
+
+export interface GiftedInfo {
+  subjectId: string | number;
+  title: string;
+  overview?: string;
+  year?: number;
+  rating?: number;
+  imageUrl?: string;
+  coverUrl?: string;
+  type?: "movie" | "tv";
+  genres?: string[];
+  runtime?: number;
+  stars?: { name: string; character?: string; profile?: string }[];
+  seasons?: { season_number: number; episode_count: number; name?: string }[];
+}
+
+/** Fetch unified info for a Gifted subject (used by DetailsPage when source=gifted). */
+export async function getGiftedInfo(subjectId: string | number): Promise<GiftedInfo | null> {
+  try {
+    const data = await callProxy<any>(`info/${subjectId}`, {});
+    const r = data?.result || data?.data || data;
+    if (!r) return null;
+    const stars = Array.isArray(r.stars)
+      ? r.stars
+      : Array.isArray(r.cast)
+        ? r.cast
+        : [];
+    const normalizedStars = stars.map((s: any) =>
+      typeof s === "string"
+        ? { name: s }
+        : { name: s.name || s.actor || "", character: s.character || s.role, profile: s.profile || s.image },
+    );
+    let seasons: GiftedInfo["seasons"] | undefined;
+    if (Array.isArray(r.seasons)) {
+      seasons = r.seasons.map((s: any, i: number) => ({
+        season_number: Number(s.season_number ?? s.season ?? i + 1),
+        episode_count: Number(s.episode_count ?? (Array.isArray(s.episodes) ? s.episodes.length : 0)),
+        name: s.name || `Season ${s.season_number ?? i + 1}`,
+      }));
+    } else if (r.totalSeasons) {
+      seasons = Array.from({ length: Number(r.totalSeasons) }, (_, i) => ({
+        season_number: i + 1,
+        episode_count: 0,
+        name: `Season ${i + 1}`,
+      }));
+    }
+    return {
+      subjectId: r.subjectId ?? r.id ?? subjectId,
+      title: r.title || "",
+      overview: r.description || r.overview,
+      year: r.releaseDate ? Number(String(r.releaseDate).slice(0, 4)) : (r.year ? Number(r.year) : undefined),
+      rating: r.imdbRatingValue ? Number(r.imdbRatingValue) : (r.rating ? Number(r.rating) : undefined),
+      imageUrl: r.cover?.url || r.imageUrl || r.thumbnail,
+      coverUrl: r.cover?.url || r.backdrop || r.imageUrl,
+      type: r.subjectType === 2 ? "tv" : r.subjectType === 1 ? "movie" : (Array.isArray(r.seasons) || r.totalSeasons ? "tv" : "movie"),
+      genres: Array.isArray(r.genre) ? r.genre : Array.isArray(r.genres) ? r.genres : undefined,
+      runtime: r.runtime ? Number(r.runtime) : undefined,
+      stars: normalizedStars,
+      seasons,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Fetch single Gifted subject details (used by Nollywood detail page). */
