@@ -28,7 +28,7 @@ const BottomNav = () => {
   ];
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-area-bottom">
+    <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-area-bottom">
       <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
         {tabs.map(({ to, label, icon: Icon }) => (
           <NavLink
