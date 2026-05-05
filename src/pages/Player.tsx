@@ -691,14 +691,14 @@ export default function Player() {
     flashControls();
   };
 
-  if (!Number.isFinite(numericId)) {
+  if (!isGiftedSource && !Number.isFinite(numericId)) {
     return <div className="p-8">Invalid content.</div>;
   }
 
   const displayTime = isSeeking ? seekPreview : position;
   const pct = duration ? (displayTime / duration) * 100 : 0;
-  const initialLoading = matchingId || loadingSources;
-  const noMatch = !matchingId && !subjectId && !!title;
+  const initialLoading = (matchEnabled && matchingId) || loadingSources;
+  const noMatch = matchEnabled && !matchingId && !subjectId && !!title;
   const noSources = !!subjectId && !loadingSources && sources.length === 0;
   const hasFatal = noMatch || noSources || (sourcesError && !sources.length) || streamError;
 
