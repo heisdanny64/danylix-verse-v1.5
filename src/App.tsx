@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import BottomNav from "@/components/BottomNav";
+import TopNav from "@/components/TopNav";
 import Index from "./pages/Index.tsx";
 import SearchPage from "./pages/SearchPage.tsx";
 import DetailsPage from "./pages/DetailsPage.tsx";
@@ -14,7 +15,6 @@ import RecommendationsPage from "./pages/RecommendationsPage.tsx";
 import LibraryPage from "./pages/LibraryPage.tsx";
 import AuthPage from "./pages/AuthPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
-import GiftedDetailsPage from "./pages/GiftedDetailsPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -26,11 +26,11 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <TopNav />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/details/:type/:id" element={<DetailsPage />} />
-            <Route path="/details/gifted/:id" element={<GiftedDetailsPage />} />
             <Route path="/player/:type/:id" element={<Player />} />
             <Route path="/category/:slug" element={<CategoryPage />} />
             <Route path="/recommendations" element={<RecommendationsPage />} />
