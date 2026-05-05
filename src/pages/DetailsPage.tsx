@@ -210,7 +210,14 @@ const DetailsPage = () => {
                     {s.name} ({s.episode_count} episodes)
                   </AccordionTrigger>
                   <AccordionContent>
-                    <EpisodeList tvId={numericId} seasonNumber={s.season_number} onPlayEpisode={handlePlayEpisode} />
+                    <EpisodeList
+                      tvId={numericId}
+                      externalId={isGifted ? id : undefined}
+                      seasonNumber={s.season_number}
+                      onPlayEpisode={handlePlayEpisode}
+                      source={isGifted ? "gifted" : "tmdb"}
+                      episodeCount={s.episode_count}
+                    />
                   </AccordionContent>
                 </AccordionItem>
               ))}
