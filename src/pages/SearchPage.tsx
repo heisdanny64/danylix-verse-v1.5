@@ -10,18 +10,32 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
-type FilterType = "all" | "movie" | "tv" | "gifted";
+type FilterType = "all" | "movie" | "tv";
+
+const SEASON_NOISE = /\b(s\d+(\s*-\s*s?\d+)?|season\s?\d+)\b/i;
+const VARIANT_TOKEN = /\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/i;
 
 function mergeResults(tmdb: MediaItem[], gifted: MediaItem[]): MediaItem[] {
   const tmdbKeys = new Set(tmdb.map((t) => normalizeTitle(t.title)));
-  const tmdbVariants = new Set(tmdb.map((t) => variantKey(t.title)));
-  const giftedFiltered = gifted.filter((g) => {
-    const n = normalizeTitle(g.title);
-    const v = variantKey(g.title);
-    // Drop only if BOTH base and variant key match — keeps "Naruto [English]"
-    return !(tmdbKeys.has(n) && tmdbVariants.has(v));
-  });
-  return [...tmdb, ...giftedFiltered];
+
+  // Strip noisy season-fragment Gifted titles, then dedup against TMDB unless variant.
+  const cleaned = gifted
+    .filter((g) => g.title && !SEASON_NOISE.test(g.title))
+    .filter((g) => {
+      const isVariant = VARIANT_TOKEN.test(g.title);
+      if (isVariant) return true;
+      // No variant token → drop if TMDB already has the same base title.
+      return !tmdbKeys.has(normalizeTitle(g.title));
+    });
+
+  // Interleave so results read mixed (TMDB + Gifted variants intermixed).
+  const out: MediaItem[] = [];
+  const max = Math.max(tmdb.length, cleaned.length);
+  for (let i = 0; i < max; i++) {
+    if (i < tmdb.length) out.push(tmdb[i]);
+    if (i < cleaned.length) out.push(cleaned[i]);
+  }
+  return out;
 }
 
 const SearchPage = () => {
@@ -70,23 +84,19 @@ const SearchPage = () => {
 
   const isLoading = tmdbLoading || giftedLoading;
 
+  // Build TMDB and Gifted lists independently — never overwrite each other.
   const tmdbItems: MediaItem[] = (tmdbResults || [])
     .filter((r) => r.media_type === "movie" || r.media_type === "tv")
     .map((r) => tmdbToMediaItem(r as any, r.media_type as "movie" | "tv"));
   const giftedItems: MediaItem[] = (giftedResults || []).map(giftedToMediaItem);
   const merged = mergeResults(tmdbItems, giftedItems);
 
-  const filtered = merged.filter((m) => {
-    if (filter === "all") return true;
-    if (filter === "gifted") return m.source === "gifted";
-    return m.type === filter;
-  });
+  const filtered = merged.filter((m) => (filter === "all" ? true : m.type === filter));
 
   const filters: { label: string; value: FilterType }[] = [
     { label: "All", value: "all" },
     { label: "Movies", value: "movie" },
     { label: "TV", value: "tv" },
-    { label: "Gifted", value: "gifted" },
   ];
 
   return (
@@ -146,7 +156,7 @@ const SearchPage = () => {
           </p>
         )}
         {filtered.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {filtered.map((item) => (
               <MovieCard
                 key={`${item.source}-${item.type}-${item.id}`}
