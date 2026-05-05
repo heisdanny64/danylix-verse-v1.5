@@ -4,7 +4,7 @@ import { ArrowLeft, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { searchTMDB } from "@/lib/tmdb";
 import { searchGifted } from "@/services/giftedApi";
-import { tmdbToMediaItem, giftedToMediaItem, mediaToTmdbCard, normalizeTitle, variantKey, type MediaItem } from "@/lib/media";
+import { tmdbToMediaItem, giftedToMediaItem, mediaToTmdbCard, normalizeTitle, type MediaItem } from "@/lib/media";
 import MovieCard from "@/components/MovieCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
