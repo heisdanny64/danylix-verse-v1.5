@@ -66,20 +66,21 @@ export default function Player() {
   // Anime now plays through the TV pipeline. Legacy /player/anime/* routes
   // are redirected by App.tsx.
   const contentType = (type as "movie" | "tv") || "movie";
+  const isGiftedSource = searchParams.get("source") === "gifted";
   const numericId = Number(id);
   const season = Number(searchParams.get("season")) || 1;
   const episode = Number(searchParams.get("episode")) || 1;
 
-  // Metadata
+  // Metadata (only for TMDB-sourced content; gifted has its own info endpoint)
   const { data: tmdbDetails } = useQuery({
     queryKey: ["player-detail", contentType, numericId],
     queryFn: () => getMovieDetails(numericId, contentType as "movie" | "tv"),
-    enabled: !!numericId,
+    enabled: !isGiftedSource && !!numericId && Number.isFinite(numericId),
   });
   const { data: seasonData } = useQuery({
     queryKey: ["player-season", numericId, season],
     queryFn: () => getSeasonDetails(numericId, season),
-    enabled: contentType === "tv" && !!numericId,
+    enabled: !isGiftedSource && contentType === "tv" && !!numericId && Number.isFinite(numericId),
   });
 
   const title = tmdbDetails ? getDisplayInfo(tmdbDetails as any).title : "";
@@ -90,9 +91,11 @@ export default function Player() {
   const hasNext = !isMovie && (totalEpisodes === 0 || episode < totalEpisodes);
   const hasPrev = !isMovie && episode > 1;
 
-  // Resolved subjectId for Gifted
-  const matchEnabled = !!title;
-  const { data: subjectId, isLoading: matchingId, refetch: refetchMatch } = useQuery({
+  // Resolved subjectId for Gifted.
+  // If `source=gifted` was passed (DetailsPage routed from a Gifted card),
+  // skip the TMDB → Gifted matching round trip and use the URL id directly.
+  const matchEnabled = !isGiftedSource && !!title;
+  const { data: matchedId, isLoading: matchingId, refetch: refetchMatch } = useQuery({
     queryKey: ["gifted-match", contentType, numericId, title, year],
     queryFn: () =>
       findBestMatch({
@@ -104,6 +107,7 @@ export default function Player() {
     enabled: matchEnabled,
     staleTime: 30 * 60 * 1000,
   });
+  const subjectId: string | number | null | undefined = isGiftedSource ? id : matchedId;
 
   const sourceSeason = isMovie ? undefined : season;
   const sourceEpisode = isMovie ? undefined : episode;
@@ -687,14 +691,14 @@ export default function Player() {
     flashControls();
   };
 
-  if (!Number.isFinite(numericId)) {
+  if (!isGiftedSource && !Number.isFinite(numericId)) {
     return <div className="p-8">Invalid content.</div>;
   }
 
   const displayTime = isSeeking ? seekPreview : position;
   const pct = duration ? (displayTime / duration) * 100 : 0;
-  const initialLoading = matchingId || loadingSources;
-  const noMatch = !matchingId && !subjectId && !!title;
+  const initialLoading = (matchEnabled && matchingId) || loadingSources;
+  const noMatch = matchEnabled && !matchingId && !subjectId && !!title;
   const noSources = !!subjectId && !loadingSources && sources.length === 0;
   const hasFatal = noMatch || noSources || (sourcesError && !sources.length) || streamError;
 

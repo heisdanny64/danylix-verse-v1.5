@@ -17,15 +17,18 @@ const MovieCard = ({ movie, mediaType, compact, variant = "portrait", hrefFor }:
   const link = hrefFor
     ? hrefFor(movie)
     : giftedId
-      ? `/details/gifted/${giftedId}`
+      ? `/details/${type}/${giftedId}?source=gifted`
       : type === "tv"
         ? `/details/tv/${movie.id}`
         : `/details/movie/${movie.id}`;
 
-  // Gifted items already have absolute image URLs (poster_path holds the URL).
-  const posterSrc = giftedId
-    ? movie.poster_path || "/placeholder.svg"
-    : posterUrl(movie.poster_path);
+  // Detect already-absolute URLs (Gifted) vs TMDB paths.
+  const raw = movie.poster_path || "";
+  const posterSrc = !raw
+    ? "/placeholder.svg"
+    : /^https?:\/\//i.test(raw)
+      ? raw
+      : posterUrl(raw);
 
   const typeLabel = type === "tv" ? "TV" : "MOVIE";
   const isLandscape = variant === "landscape";

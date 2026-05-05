@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, Plus, Play, Check, Download } from "lucide-react";
 import { getMovieDetails, backdropUrl, getDisplayInfo, type TMDBEpisode } from "@/lib/tmdb";
@@ -10,12 +10,15 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useToast } from "@/hooks/use-toast";
 import EpisodeList from "@/components/EpisodeList";
 import MovieRow from "@/components/MovieRow";
-import CastRow from "@/components/CastRow";
+import CastRow, { type CastRowItem } from "@/components/CastRow";
 import DownloadModal from "@/components/DownloadModal";
+import { getGiftedInfo } from "@/services/giftedApi";
 import { useState } from "react";
 
 const DetailsPage = () => {
   const { type, id } = useParams<{ type: string; id: string }>();
+  const [searchParams] = useSearchParams();
+  const source = (searchParams.get("source") === "gifted" ? "gifted" : "tmdb") as "tmdb" | "gifted";
   const navigate = useNavigate();
   const { toast } = useToast();
   const { toggleWatchlist, isInWatchlist } = useLibrary();
@@ -23,12 +26,59 @@ const DetailsPage = () => {
 
   const contentType = ((type === "anime" ? "tv" : type) as "movie" | "tv") || "movie";
   const numericId = Number(id);
+  const isGifted = source === "gifted";
 
-  const { data: detail, isLoading } = useQuery({
+  const { data: tmdbDetail, isLoading: tmdbLoading } = useQuery({
     queryKey: ["detail", contentType, numericId],
     queryFn: () => getMovieDetails(numericId, contentType),
-    enabled: !!numericId,
+    enabled: !isGifted && !!numericId,
   });
+
+  const { data: giftedDetail, isLoading: giftedLoading } = useQuery({
+    queryKey: ["gifted-info", id],
+    queryFn: () => getGiftedInfo(id!),
+    enabled: isGifted && !!id,
+  });
+
+  const isLoading = isGifted ? giftedLoading : tmdbLoading;
+
+  // Normalize Gifted info into the same shape DetailsPage already consumes.
+  const detail: any = isGifted
+    ? giftedDetail
+      ? {
+          id: numericId || giftedDetail.subjectId,
+          title: giftedDetail.title,
+          name: giftedDetail.type === "tv" ? giftedDetail.title : undefined,
+          overview: giftedDetail.overview || "",
+          poster_path: giftedDetail.imageUrl || null,
+          backdrop_path: giftedDetail.coverUrl || giftedDetail.imageUrl || null,
+          vote_average: giftedDetail.rating || 0,
+          release_date: giftedDetail.year ? `${giftedDetail.year}-01-01` : undefined,
+          first_air_date: giftedDetail.type === "tv" && giftedDetail.year ? `${giftedDetail.year}-01-01` : undefined,
+          genres: (giftedDetail.genres || []).map((g, i) => ({ id: i, name: g })),
+          runtime: giftedDetail.runtime,
+          tagline: undefined,
+          number_of_seasons: giftedDetail.seasons?.length,
+          seasons: giftedDetail.seasons?.map((s) => ({
+            id: s.season_number,
+            name: s.name || `Season ${s.season_number}`,
+            season_number: s.season_number,
+            episode_count: s.episode_count,
+            poster_path: null,
+            air_date: null,
+          })),
+        }
+      : undefined
+    : tmdbDetail;
+
+  const giftedCast: CastRowItem[] | undefined = isGifted && giftedDetail?.stars
+    ? giftedDetail.stars.map((s, i) => ({
+        id: i,
+        name: s.name,
+        character: s.character,
+        profile_path: s.profile || null,
+      }))
+    : undefined;
 
   const tmdbTitle = detail ? getDisplayInfo(detail as any).title : "";
 
@@ -37,7 +87,7 @@ const DetailsPage = () => {
   const { data: recs } = useQuery({
     queryKey: ["tastedive-recs", contentType, tmdbTitle, numericId],
     queryFn: () => getMovieTVRecommendations(tmdbTitle, contentType, numericId),
-    enabled: !!detail && !!tmdbTitle,
+    enabled: !isGifted && !!detail && !!tmdbTitle,
     staleTime: 30 * 60 * 1000,
   });
 
@@ -64,10 +114,11 @@ const DetailsPage = () => {
 
   const { title, year } = getDisplayInfo(detail as any);
   const inWatchlist = isInWatchlist(detail.id, contentType);
-  const seasons = contentType === "tv" ? detail.seasons?.filter((s) => s.season_number > 0) || [] : [];
+  const seasons = contentType === "tv" ? detail.seasons?.filter((s: any) => s.season_number > 0) || [] : [];
 
   const handlePlayEpisode = (ep: TMDBEpisode) => {
-    navigate(`/player/tv/${numericId}?season=${ep.season_number}&episode=${ep.episode_number}`);
+    const qs = isGifted ? `&source=gifted` : "";
+    navigate(`/player/tv/${id}?season=${ep.season_number}&episode=${ep.episode_number}${qs}`);
   };
 
   const handleToggleWatchlist = () => {
@@ -131,8 +182,10 @@ const DetailsPage = () => {
           <Button
             className="flex-1 gap-1.5"
             onClick={() => {
-              if (contentType === "movie") navigate(`/player/movie/${numericId}`);
-              else navigate(`/player/tv/${numericId}?season=1&episode=1`);
+              const qs = isGifted ? `?source=gifted` : "";
+              const tvQs = isGifted ? `?season=1&episode=1&source=gifted` : `?season=1&episode=1`;
+              if (contentType === "movie") navigate(`/player/movie/${id}${qs}`);
+              else navigate(`/player/tv/${id}${tvQs}`);
             }}
           >
             <Play className="w-4 h-4 fill-current" />
@@ -157,7 +210,14 @@ const DetailsPage = () => {
                     {s.name} ({s.episode_count} episodes)
                   </AccordionTrigger>
                   <AccordionContent>
-                    <EpisodeList tvId={numericId} seasonNumber={s.season_number} onPlayEpisode={handlePlayEpisode} />
+                    <EpisodeList
+                      tvId={numericId}
+                      externalId={isGifted ? id : undefined}
+                      seasonNumber={s.season_number}
+                      onPlayEpisode={handlePlayEpisode}
+                      source={isGifted ? "gifted" : "tmdb"}
+                      episodeCount={s.episode_count}
+                    />
                   </AccordionContent>
                 </AccordionItem>
               ))}
@@ -167,7 +227,9 @@ const DetailsPage = () => {
       </div>
 
       <div className="mt-8">
-        <CastRow id={detail.id} mediaType={contentType} />
+        {isGifted
+          ? <CastRow cast={giftedCast || []} />
+          : <CastRow id={detail.id} mediaType={contentType} />}
       </div>
 
       {recs && recs.length > 0 && (
