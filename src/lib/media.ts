@@ -53,6 +53,8 @@ export function tmdbToMediaItem(
     source: "tmdb",
     year: year ?? undefined,
     rating: (m as any).vote_average,
+    // Stash raw TMDB paths so consumers (MovieCard) can rebuild URLs at any size
+    ...( { _posterPath: (m as any).poster_path, _backdropPath: (m as any).backdrop_path } as any ),
   };
 }
 
@@ -77,13 +79,17 @@ export function giftedToMediaItem(g: GiftedSearchItem): MediaItem {
 
 /** TMDB MediaItem shaped as a TMDBMovie so existing MovieCard/MovieRow can render it. */
 export function mediaToTmdbCard(m: MediaItem): TMDBMovie & { _giftedId?: string } {
+  // For TMDB items keep the raw poster_path so posterUrl() can build a CDN URL.
+  // For Gifted items the poster is already an absolute URL — pass it through.
+  const rawPoster = (m as any)._posterPath as string | null | undefined;
+  const rawBackdrop = (m as any)._backdropPath as string | null | undefined;
   return {
     id: Number(m.id) || 0,
     title: m.type === "movie" ? m.title : undefined,
     name: m.type === "tv" ? m.title : undefined,
     overview: "",
-    poster_path: m.source === "gifted" ? m.poster : null,
-    backdrop_path: m.source === "gifted" ? m.backdrop || null : null,
+    poster_path: m.source === "gifted" ? (m.poster || null) : (rawPoster ?? null),
+    backdrop_path: m.source === "gifted" ? (m.backdrop || null) : (rawBackdrop ?? null),
     vote_average: m.rating ?? 0,
     genre_ids: [],
     media_type: m.type,
