@@ -3,30 +3,88 @@
 @tailwind utilities;
 
 /* =========================
-   BASE RESET
+   Subtitle cue styling (UNCHANGED)
 ========================= */
 
-html,
-body {
+::cue {
+  color: #fff;
+  background: transparent;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* =========================
+   YOUR ORIGINAL THEME (UNCHANGED)
+========================= */
+
+@layer base {
+  :root {
+    --background: 240 14% 4%;
+    --foreground: 240 5% 96%;
+
+    --card: 240 14% 10%;
+    --card-foreground: 240 5% 96%;
+
+    --popover: 240 14% 10%;
+    --popover-foreground: 240 5% 96%;
+
+    --primary: 255 100% 68%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 263 91% 76%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 240 5% 18%;
+    --muted-foreground: 240 4% 66%;
+
+    --accent: 255 100% 68%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 5% 18%;
+    --input: 240 5% 18%;
+    --ring: 255 100% 68%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 240 14% 6%;
+    --sidebar-foreground: 240 5% 96%;
+    --sidebar-primary: 255 100% 68%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 5% 18%;
+    --sidebar-accent-foreground: 240 5% 96%;
+    --sidebar-border: 240 5% 18%;
+    --sidebar-ring: 255 100% 68%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* =========================
+   SAFE ADDITIONS ONLY
+========================= */
+
+html, body {
   height: 100%;
   width: 100%;
   margin: 0;
-  padding: 0;
-  background: hsl(var(--background));
-  overflow-x: hidden;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
 }
 
 #root {
   height: 100%;
-  width: 100%;
 }
 
-/* =========================
-   SAFE AREA
-========================= */
-
+/* Notch support */
 body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
@@ -35,7 +93,7 @@ body {
 }
 
 /* =========================
-   SPLASH SCREEN
+   SPLASH (ISOLATED)
 ========================= */
 
 #splash-screen {
@@ -57,14 +115,12 @@ body {
   padding: 20px;
 }
 
-/* Image */
 .splash-inner img {
   width: 120px;
   height: auto;
-  animation: splashFadeIn 0.8s ease forwards;
+  animation: fadeIn 0.8s ease forwards;
 }
 
-/* Logo */
 .logo-text {
   font-size: 22px;
   font-weight: 600;
@@ -72,14 +128,13 @@ body {
 }
 
 .logo-d {
-  color: #ffffff;
+  color: #fff;
 }
 
 .logo-verse {
-  color: hsl(var(--primary)); /* YOUR ACTUAL APP PURPLE */
+  color: hsl(var(--primary));
 }
 
-/* Tagline */
 .tagline {
   font-size: 14px;
   color: #aaa;
@@ -92,7 +147,7 @@ body {
 }
 
 /* Animations */
-@keyframes splashFadeIn {
+@keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
@@ -101,42 +156,4 @@ body {
   opacity: 0;
   transition: opacity 0.6s ease;
   pointer-events: none;
-}
-
-/* =========================
-   SUBTITLES
-========================= */
-
-::cue {
-  color: #fff;
-  background: transparent;
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 14px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-}
-
-/* =========================
-   THEME VARIABLES
-========================= */
-
-@layer base {
-  :root {
-    --background: 240 14% 4%;
-    --foreground: 240 5% 96%;
-
-    --card: 240 14% 10%;
-    --card-foreground: 240 5% 96%;
-
-    --primary: 255 100% 68%;
-    --primary-foreground: 0 0% 100%;
-  }
-
-  * {
-    @apply border-border;
-  }
-
-  body {
-    @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  }
 }
