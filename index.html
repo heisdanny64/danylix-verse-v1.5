@@ -2,26 +2,32 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Mobile / PWA viewport -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
     <!-- Title & SEO -->
     <title>D. Verse — Your Movie Hub</title>
     <meta name="description" content="Discover trending movies, series, and anime with D. Verse — a cinematic dark-themed movie discovery experience." />
     <meta name="author" content="Danylix" />
 
-    <!-- Favicon -->
+    <!-- Theme -->
+    <meta name="theme-color" content="#0a0a0f" />
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Icons -->
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
-
-    <!-- Apple -->
     <link rel="apple-touch-icon" href="/favicon-180x180.png" />
 
-    <!-- PWA -->
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#000000" />
+    <!-- iOS PWA behavior -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-    <!-- Open Graph (for WhatsApp, Discord, etc.) -->
+    <!-- Open Graph -->
     <meta property="og:title" content="D. Verse — Your Movie Hub" />
     <meta property="og:description" content="Stream anime, movies and series in one universe." />
     <meta property="og:type" content="website" />
@@ -35,7 +41,37 @@
   </head>
 
   <body>
+    <!-- =========================
+         CUSTOM SPLASH SCREEN
+    ========================== -->
+    <div id="splash-screen">
+      <div class="splash-inner">
+        <img src="/favicon-192x192.png" alt="D. Verse Logo" />
+        <h1>D. Verse</h1>
+      </div>
+    </div>
+
+    <!-- React App Root -->
     <div id="root"></div>
+
+    <!-- React Entry -->
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Splash Control Logic -->
+    <script>
+      // Keep splash until app is ready
+      document.addEventListener("DOMContentLoaded", () => {
+        const splash = document.getElementById("splash-screen");
+
+        // Slight delay for smoother perceived load
+        setTimeout(() => {
+          splash.classList.add("fade-out");
+
+          setTimeout(() => {
+            splash.remove();
+          }, 500);
+        }, 800);
+      });
+    </script>
   </body>
 </html>
