@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* =========================
-   BASE APP RESET (PWA SAFE)
+   BASE RESET
 ========================= */
 
 html,
@@ -24,7 +24,7 @@ body {
 }
 
 /* =========================
-   SAFE AREA (NOTCH SUPPORT)
+   SAFE AREA
 ========================= */
 
 body {
@@ -35,7 +35,76 @@ body {
 }
 
 /* =========================
-   SUBTITLE STYLE (VIDEO PLAYER)
+   SPLASH SCREEN
+========================= */
+
+#splash-screen {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+
+.splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  padding: 20px;
+}
+
+/* Image */
+.splash-inner img {
+  width: 120px;
+  height: auto;
+  animation: splashFadeIn 0.8s ease forwards;
+}
+
+/* Logo */
+.logo-text {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.logo-d {
+  color: #ffffff;
+}
+
+.logo-verse {
+  color: hsl(var(--primary)); /* YOUR ACTUAL APP PURPLE */
+}
+
+/* Tagline */
+.tagline {
+  font-size: 14px;
+  color: #aaa;
+}
+
+#typing-text {
+  color: #fff;
+  border-right: 2px solid hsl(var(--primary));
+  padding-right: 3px;
+}
+
+/* Animations */
+@keyframes splashFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#splash-screen.fade-out {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+}
+
+/* =========================
+   SUBTITLES
 ========================= */
 
 ::cue {
@@ -47,86 +116,7 @@ body {
 }
 
 /* =========================
-   SPLASH SCREEN (CUSTOM PWA LAUNCH)
-========================= */
-
-#splash-screen {
-  position: fixed;
-  inset: 0;
-  background: #000000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 99999;
-}
-
-.splash-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-}
-
-.splash-inner img {
-  width: 90px;
-  height: 90px;
-  animation: splashPulse 1.2s ease-in-out infinite;
-}
-
-.splash-inner h1 {
-  color: #ffffff;
-  font-size: 18px;
-  font-weight: 500;
-  letter-spacing: 1px;
-  opacity: 0.85;
-}
-
-/* smooth pulse animation */
-@keyframes splashPulse {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.08);
-    opacity: 0.6;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-/* fade out transition */
-#splash-screen.fade-out {
-  opacity: 0;
-  transition: opacity 0.5s ease;
-  pointer-events: none;
-}
-
-/* =========================
-   GLOBAL UI POLISH
-========================= */
-
-/* better scroll feel on mobile */
-* {
-  scroll-behavior: smooth;
-}
-
-/* remove ugly focus outlines but keep accessibility soft */
-:focus {
-  outline: none;
-}
-
-/* optional: smoother rendering */
-body {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* =========================
-   YOUR THEME VARIABLES (already used)
+   THEME VARIABLES
 ========================= */
 
 @layer base {
@@ -137,38 +127,8 @@ body {
     --card: 240 14% 10%;
     --card-foreground: 240 5% 96%;
 
-    --popover: 240 14% 10%;
-    --popover-foreground: 240 5% 96%;
-
     --primary: 255 100% 68%;
     --primary-foreground: 0 0% 100%;
-
-    --secondary: 263 91% 76%;
-    --secondary-foreground: 0 0% 100%;
-
-    --muted: 240 5% 18%;
-    --muted-foreground: 240 4% 66%;
-
-    --accent: 255 100% 68%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 240 5% 18%;
-    --input: 240 5% 18%;
-    --ring: 255 100% 68%;
-
-    --radius: 0.75rem;
-
-    --sidebar-background: 240 14% 6%;
-    --sidebar-foreground: 240 5% 96%;
-    --sidebar-primary: 255 100% 68%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 5% 18%;
-    --sidebar-accent-foreground: 240 5% 96%;
-    --sidebar-border: 240 5% 18%;
-    --sidebar-ring: 255 100% 68%;
   }
 
   * {
