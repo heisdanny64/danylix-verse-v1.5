@@ -2,10 +2,16 @@ const API_KEY = "eb81f29c8c34e05a51e64378606495c0";
 const BASE = "https://api.themoviedb.org/3";
 
 export const IMG_BASE = "https://image.tmdb.org/t/p";
-export const posterUrl = (path: string | null, size = "w342") =>
-  path ? `${IMG_BASE}/${size}${path}` : "/placeholder.svg";
-export const backdropUrl = (path: string | null, size = "w780") =>
-  path ? `${IMG_BASE}/${size}${path}` : "/placeholder.svg";
+export const posterUrl = (path: string | null, size = "w342") => {
+  if (!path) return "/placeholder.svg";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${IMG_BASE}/${size}${path}`;
+};
+export const backdropUrl = (path: string | null, size = "w780") => {
+  if (!path) return "/placeholder.svg";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${IMG_BASE}/${size}${path}`;
+};
 
 export interface TMDBMovie {
   id: number;
