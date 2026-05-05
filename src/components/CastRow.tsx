@@ -2,18 +2,30 @@ import { useQuery } from "@tanstack/react-query";
 import { getCredits, posterUrl } from "@/lib/tmdb";
 import { Skeleton } from "@/components/ui/skeleton";
 
-interface CastRowProps {
-  id: number;
-  mediaType: "movie" | "tv";
+export interface CastRowItem {
+  id: number | string;
+  name: string;
+  character?: string;
+  profile_path?: string | null;
 }
 
-const CastRow = ({ id, mediaType }: CastRowProps) => {
-  const { data, isLoading } = useQuery({
+interface CastRowProps {
+  id?: number;
+  mediaType?: "movie" | "tv";
+  cast?: CastRowItem[]; // when provided, skip TMDB fetch
+}
+
+const CastRow = ({ id, mediaType, cast }: CastRowProps) => {
+  const useExternal = Array.isArray(cast);
+  const { data: fetched, isLoading } = useQuery({
     queryKey: ["credits", mediaType, id],
-    queryFn: () => getCredits(id, mediaType),
-    enabled: !!id,
+    queryFn: () => getCredits(id!, mediaType!),
+    enabled: !useExternal && !!id && !!mediaType,
     staleTime: 60 * 60 * 1000,
   });
+  const data: CastRowItem[] | undefined = useExternal
+    ? cast
+    : (fetched as any);
 
   if (!isLoading && (!data || data.length === 0)) return null;
 
@@ -29,12 +41,12 @@ const CastRow = ({ id, mediaType }: CastRowProps) => {
                 <Skeleton className="h-3 w-12 mt-1" />
               </div>
             ))
-          : data!.map((c) => (
-              <div key={c.id} className="flex-shrink-0 w-[88px] text-center">
+          : data!.map((c, i) => (
+              <div key={String(c.id ?? i)} className="flex-shrink-0 w-[88px] text-center">
                 <div className="h-[88px] w-[88px] rounded-full overflow-hidden bg-muted mx-auto">
                   {c.profile_path ? (
                     <img
-                      src={posterUrl(c.profile_path, "w185")}
+                      src={/^https?:\/\//i.test(c.profile_path) ? c.profile_path : posterUrl(c.profile_path, "w185")}
                       alt={c.name}
                       className="h-full w-full object-cover"
                       loading="lazy"
