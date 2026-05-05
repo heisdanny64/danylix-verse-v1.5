@@ -14,7 +14,7 @@
     <!-- Theme -->
     <meta name="theme-color" content="#0a0a0f" />
 
-    <!-- PWA Manifest -->
+    <!-- PWA -->
     <link rel="manifest" href="/manifest.json" />
 
     <!-- Icons -->
@@ -23,7 +23,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
     <link rel="apple-touch-icon" href="/favicon-180x180.png" />
 
-    <!-- iOS PWA behavior -->
+    <!-- iOS PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
@@ -41,36 +41,73 @@
   </head>
 
   <body>
-    <!-- =========================
-         CUSTOM SPLASH SCREEN
-    ========================== -->
+    <!-- SPLASH SCREEN -->
     <div id="splash-screen">
       <div class="splash-inner">
-        <img src="/favicon-192x192.png" alt="D. Verse Logo" />
-        <h1>D. Verse</h1>
+        <img src="/splash.png" alt="D. Verse Splash" />
+
+        <h1 class="logo-text">
+          <span class="logo-d">D.</span><span class="logo-verse">Verse</span>
+        </h1>
+
+        <p class="tagline">
+          Your one stop destination for <span id="typing-text"></span>
+        </p>
       </div>
     </div>
 
-    <!-- React App Root -->
+    <!-- React Root -->
     <div id="root"></div>
 
     <!-- React Entry -->
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- Splash Control Logic -->
+    <!-- Splash Logic -->
     <script>
-      // Keep splash until app is ready
+      const words = ["Movies", "Series", "Anime"];
+      let wordIndex = 0;
+      let charIndex = 0;
+      let isDeleting = false;
+
+      function typeEffect() {
+        const typingElement = document.getElementById("typing-text");
+        if (!typingElement) return;
+
+        const currentWord = words[wordIndex];
+
+        if (isDeleting) {
+          charIndex--;
+        } else {
+          charIndex++;
+        }
+
+        typingElement.textContent = currentWord.substring(0, charIndex);
+
+        let speed = isDeleting ? 50 : 90;
+
+        if (!isDeleting && charIndex === currentWord.length) {
+          speed = 1200;
+          isDeleting = true;
+        } else if (isDeleting && charIndex === 0) {
+          isDeleting = false;
+          wordIndex = (wordIndex + 1) % words.length;
+          speed = 400;
+        }
+
+        setTimeout(typeEffect, speed);
+      }
+
       document.addEventListener("DOMContentLoaded", () => {
+        typeEffect();
+
         const splash = document.getElementById("splash-screen");
 
-        // Slight delay for smoother perceived load
+        const MIN_TIME = 2600; // slightly longer for premium feel
+
         setTimeout(() => {
           splash.classList.add("fade-out");
-
-          setTimeout(() => {
-            splash.remove();
-          }, 500);
-        }, 800);
+          setTimeout(() => splash.remove(), 600);
+        }, MIN_TIME);
       });
     </script>
   </body>
