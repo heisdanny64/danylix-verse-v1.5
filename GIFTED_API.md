@@ -1,189 +1,236 @@
-# Gifted Movies API Documentation (v2.0.0)
+# Gifted Movies API
+## Version 2.0.0 Documentation
 
-Base URL:
+---
+
+## 🚀 Overview
+
+The Gifted Movies API provides access to movies, TV series, metadata, streaming sources, and download links.
+
+- Method: GET
+- Response Format: JSON
+- Authentication: Bearer Token Required
+- Base URL:
 https://movieapi.giftedtech.co.ke/api/v2/
 
-----------------------------------------
-🔐 AUTHENTICATION
-----------------------------------------
+- Uptime: 99.9%
+- Average Response Time: < 200ms
 
-All requests require Bearer Token:
+---
 
-Authorization: Bearer YOUR_API_KEY_HERE
+## 🔐 Authentication
 
-----------------------------------------
-📌 OVERVIEW
-----------------------------------------
+All requests must include an API key in the request headers:
 
-The Gifted Movies API provides:
+Authorization: Bearer YOUR_API_KEY
 
-- Movie & TV search
-- Metadata
-- Streaming links
-- Download links
-- Subtitles
+⚠️ Without this header, all requests will fail.
 
-----------------------------------------
-📡 ENDPOINTS
-----------------------------------------
+---
 
-1. Homepage
+## 📌 Core Features
+
+- Advanced search (movies & TV series)
+- Detailed metadata (cast, ratings, descriptions, trailers)
+- Trending & homepage content
+- Download sources in multiple qualities (360p–1080p)
+- Fast responses (<200ms)
+- Secure authenticated access
+
+---
+
+## 🌐 Base URL
+
+https://movieapi.giftedtech.co.ke/api/v2/
+
+---
+
+# 📡 API ENDPOINTS
+
+---
+
+## 🏠 Homepage Data
 
 GET /homepage
 
-Returns:
-- Featured content
-- Trending
-- Recommendations
+Returns homepage content including featured movies, trending content, and recommendations.
 
-----------------------------------------
+Example:
+GET https://movieapi.giftedtech.co.ke/api/v2/homepage
+Authorization: Bearer YOUR_API_KEY
 
-2. Trending
+---
+
+## 🔥 Trending Content
 
 GET /trending
 
-Returns:
-- Popular movies and series
+Returns trending movies and TV series.
 
-----------------------------------------
+Example:
+GET https://movieapi.giftedtech.co.ke/api/v2/trending
+Authorization: Bearer YOUR_API_KEY
 
-3. Search
+---
 
-GET /search/{query}?page=1
+## 🔎 Search Movies & TV Series
 
-Params:
-- query: movie or series name
-- page: optional
+GET /search/{query}
 
-Returns:
-- List of results
-- Includes `subjectId` (IMPORTANT)
+Parameters:
+- query (string): movie or TV title
+- page (int, optional): page number
 
-----------------------------------------
+Example:
+GET https://movieapi.giftedtech.co.ke/api/v2/search/Black%20Panther?page=1
+Authorization: Bearer YOUR_API_KEY
 
-4. Movie Info
+---
+
+## 🎬 Movie / TV Info
 
 GET /info/{id}
 
-Params:
-- id: subjectId
+Parameters:
+- id (string): movie or TV ID
 
-Returns:
-- Title
-- Description
-- Rating
-- Cast
+Example:
+GET https://movieapi.giftedtech.co.ke/api/v2/info/5099284245269335848
+Authorization: Bearer YOUR_API_KEY
 
-----------------------------------------
+---
 
-5. Sources (Streaming + Download)
+## 💾 Streaming & Download Sources
 
 GET /sources/{id}
 
-TV/Anime:
-GET /sources/{id}?season=1&episode=1
+Returns streaming and download links in multiple qualities.
 
-Returns:
-{
-  results: [
+---
+
+### 🎞 Movie Example
+GET https://movieapi.giftedtech.co.ke/api/v2/sources/5099284245269335848
+Authorization: Bearer YOUR_API_KEY
+
+---
+
+### 📺 TV Series Example
+GET https://movieapi.giftedtech.co.ke/api/v2/sources/9028867555875774472?season=1&episode=1
+Authorization: Bearer YOUR_API_KEY
+
+---
+
+Parameters:
+- id (string): movie or series ID
+- season (string, optional): season number
+- episode (string, optional): episode number
+
+---
+
+# 💡 Code Examples
+
+---
+
+## JavaScript
+```
+
+const API_KEY = "YOUR_API_KEY";
+const BASE_URL = "https://movieapi.giftedtech.co.ke/api/v2";
+
+async function searchMovies(query) {
+  const res = await fetch(
+    `${BASE_URL}/search/${encodeURIComponent(query)}?page=1`,
     {
-      quality: "720p",
-      download_url: "...",
-      stream_url: "...",
-      size: "123456789"
+      headers: {
+        Authorization: `Bearer ${API_KEY}`
+      }
     }
-  ],
-  subtitles: [
-    {
-      lan: "en",
-      lanName: "English",
-      url: "..."
-    }
-  ]
+  );
+  return res.json();
 }
 
-----------------------------------------
-🎬 STREAMING
-----------------------------------------
+async function getMovieInfo(id) {
+  const res = await fetch(`${BASE_URL}/info/${id}`, {
+    headers: {
+      Authorization: `Bearer ${API_KEY}`
+    }
+  });
+  return res.json();
+}
 
-Use:
-- stream_url
+async function getSources(id, season, episode) {
+  let url = `${BASE_URL}/sources/${id}`;
 
-Load into video player
+  if (season) {
+    url += `?season=${season}`;
+    if (episode) url += `&episode=${episode}`;
+  }
 
-----------------------------------------
-⬇️ DOWNLOAD
-----------------------------------------
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${API_KEY}`
+    }
+  });
 
-Use:
-- download_url
+  return res.json();
+}
+```
+---
 
-Trigger direct download
+## Python
+```
 
-----------------------------------------
-📏 SIZE FORMAT
-----------------------------------------
+import requests
 
-API returns size in BYTES.
+API_KEY = "YOUR_API_KEY"
+BASE_URL = "https://movieapi.giftedtech.co.ke/api/v2"
+HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
-Conversion:
-- MB = bytes / (1024 * 1024)
-- GB = MB / 1024 (if MB > 1024)
+def search_movies(query):
+    url = f"{BASE_URL}/search/{query}?page=1"
+    return requests.get(url, headers=HEADERS).json()
 
-----------------------------------------
-🧠 MATCHING STRATEGY
-----------------------------------------
+def get_movie_info(movie_id):
+    url = f"{BASE_URL}/info/{movie_id}"
+    return requests.get(url, headers=HEADERS).json()
 
-To find correct content:
+def get_sources(movie_id, season=None, episode=None):
+    url = f"{BASE_URL}/sources/{movie_id}"
+    params = {}
 
-1. Search using title
-2. Compare:
-   - Title similarity
-   - Release year
-   - Rating (optional)
+    if season:
+        params["season"] = season
+    if episode:
+        params["episode"] = episode
 
-3. Select best match
+    return requests.get(url, headers=HEADERS, params=params).json()
+```
+---
 
-----------------------------------------
-🎌 ANIME NOTE
-----------------------------------------
+# ⚡ Quick Start
 
-AniList separates seasons.
-Gifted API may not.
+1. Get API Key (WhatsApp support)
+2. Call homepage:
+GET /homepage
+3. Call trending:
+GET /trending
+4. Search content:
+GET /search/{query}
+5. Get details:
+GET /info/{id}
+6. Get streams:
+GET /sources/{id}
 
-Solution:
-- Search base title only
-- Ignore "Season 2", "II", etc
+---
 
-----------------------------------------
-⚠️ IMPORTANT NOTES
-----------------------------------------
+# 🧠 Notes
 
-- Stream URLs may expire
-- Always fetch fresh sources
-- Do NOT cache links long-term
+- Always include Authorization header
+- Use /info before /sources when possible
+- TV shows require season & episode for streaming
+- Do not modify returned IDs
 
-----------------------------------------
-🚀 PERFORMANCE
-----------------------------------------
+---
 
-- Fetch sources only when needed
-- Use lazy loading
-- Handle failures gracefully
-
-----------------------------------------
-📁 SUGGESTED STRUCTURE
-----------------------------------------
-
-/services/giftedApi.ts
-/components/Player.tsx
-/components/DownloadModal.tsx
-
-----------------------------------------
-🎯 GOAL
-----------------------------------------
-
-Provide:
-- Fast streaming
-- Clean download UX
-- Reliable playback
+# 🎯 Gifted Movies API v2.0.0
+Crafted by Gifted Tech
