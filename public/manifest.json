@@ -2,19 +2,13 @@
   "name": "D. Verse — Your Movie Hub",
   "short_name": "D. Verse",
   "description": "Discover trending movies, series, and anime in one cinematic universe.",
-
   "start_url": "/",
-  "id": "/",
   "scope": "/",
-
   "display": "standalone",
-  "display_override": ["fullscreen", "standalone"],
-  "orientation": "portrait-primary",
-
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
   "background_color": "#0a0a0f",
   "theme_color": "#0a0a0f",
-  "prefer_related_applications": false,
-
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/favicon-192x192.png",
@@ -35,6 +29,8 @@
       "purpose": "maskable"
     }
   ],
+  "screenshots": []
+}  ],
 
   "categories": ["entertainment", "video"],
 
