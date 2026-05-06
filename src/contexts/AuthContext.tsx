@@ -16,7 +16,7 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (name: string, username: string, email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (username: string, email: string, password: string) => Promise<{ error: string | null }>;
   signIn: (identifier: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: { name?: string; username?: string }) => Promise<{ error: string | null }>;
@@ -67,12 +67,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchProfile]);
 
-  const signUp = useCallback(async (name: string, username: string, email: string, password: string) => {
+  const signUp = useCallback(async (username: string, email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { name, username },
+        data: { name: username, username },
         emailRedirectTo: window.location.origin,
       },
     });

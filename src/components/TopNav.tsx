@@ -34,10 +34,13 @@ const TopNav = () => {
   ];
 
   return (
-    <nav className="hidden md:flex sticky top-0 z-50 w-full border-b border-border bg-background/85 backdrop-blur-md">
+    <>
+    {/* Desktop nav */}
+    <nav className="hidden md:flex sticky top-0 z-50 w-full border-b border-border bg-background/85 backdrop-blur-md pt-safe normal-case">
       <div className="w-full max-w-7xl mx-auto flex items-center gap-6 px-6 h-16">
-        <Link to="/" className="flex items-center gap-2 font-extrabold tracking-tight text-foreground">
-          <span className="text-primary">D.</span>VERSE
+        <Link to="/" className="flex items-center font-extrabold text-foreground normal-case" style={{ textTransform: "none" }}>
+          <span className="text-foreground">D.</span>
+          <span className="ml-1 text-primary">Verse</span>
         </Link>
         <div className="flex items-center gap-1">
           {tabs.map(({ to, label, icon: Icon, end }) => (
@@ -76,6 +79,28 @@ const TopNav = () => {
         </NavLink>
       </div>
     </nav>
+    {/* Mobile slim nav */}
+    <nav className="md:hidden sticky top-0 z-50 w-full border-b border-border bg-background/90 backdrop-blur-md pt-safe">
+      <div className="flex items-center justify-between gap-3 px-4 h-12">
+        <Link to="/" className="flex items-center font-extrabold text-base" style={{ textTransform: "none" }}>
+          <span className="text-foreground">D.</span>
+          <span className="ml-1 text-primary">Verse</span>
+        </Link>
+        <div className="flex items-center gap-2">
+          <NavLink to="/search" className="w-9 h-9 rounded-full bg-card flex items-center justify-center text-foreground" aria-label="Search">
+            <Search className="w-4 h-4" />
+          </NavLink>
+          <NavLink
+            to={user ? "/profile" : "/auth"}
+            className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center text-primary"
+            aria-label={user ? "Profile" : "Sign in"}
+          >
+            <User className="w-4 h-4" />
+          </NavLink>
+        </div>
+      </div>
+    </nav>
+    </>
   );
 };
 
