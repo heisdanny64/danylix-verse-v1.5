@@ -8,25 +8,40 @@ interface Props {
   id: string | number;
   title: string;
   overview?: string;
+  rating?: number | null;
 }
 
-const ShareButton = ({ type, id, title, overview }: Props) => {
+const ShareButton = ({ type, id, title, overview, rating }: Props) => {
   const { toast } = useToast();
 
   const handleShare = async () => {
     const url = `${window.location.origin}${buildDetailsHref(type, id, title)}`;
-    const data: ShareData = { title, url, text: overview?.slice(0, 200) };
+    const typeLabel = type === "tv" ? "Series" : type === "anime" ? "Anime" : "Movie";
+    const ratingStr = rating ? `⭐ ${rating.toFixed(1)} / 10` : null;
+
+    const text = [
+      `🎬 Title: ${title}`,
+      `📺 Type: ${typeLabel}`,
+      ratingStr ? `⭐ Rating: ${ratingStr}` : null,
+      overview ? `📝 Description: ${overview.slice(0, 200)}${overview.length > 200 ? "…" : ""}` : null,
+      ``,
+      `Check it out on D. Verse 👇`,
+    ].filter(Boolean).join("\n");
+
+    const shareData: ShareData = { title, url, text };
+
     try {
       if (typeof navigator !== "undefined" && "share" in navigator) {
-        await navigator.share(data);
+        await navigator.share(shareData);
         return;
       }
     } catch (err: any) {
       if (err?.name === "AbortError") return;
     }
+    // Fallback — copy full formatted text + link to clipboard
     try {
-      await navigator.clipboard.writeText(url);
-      toast({ title: "Link copied to clipboard" });
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      toast({ title: "Copied to clipboard" });
     } catch {
       toast({ title: "Could not share link", variant: "destructive" });
     }
