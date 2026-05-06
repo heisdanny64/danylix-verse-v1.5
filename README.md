@@ -1,7 +1,7 @@
  # D.Verse (Danylix Verse)
 
 <p align="center">
-  <img src=https://i.postimg.cc/MX2tWsDv/1777987278526-(2).png" width="120" alt="D.Verse Logo" />
+  <img src=https://i.postimg.cc/MX2tWsDv/1777987278526-(2).png" alt="D.Verse Logo" />
 </p>
 
 **D.Verse** is a modern movie & TV discovery platform built for seamless streaming and downloads — powered by a unified system that combines reliable metadata with fast content delivery.
