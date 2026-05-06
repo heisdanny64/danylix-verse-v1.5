@@ -1,39 +1,35 @@
-const CACHE_NAME = "dverse-v1";
-const STATIC_ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.json",
-  "/favicon-192x192.png",
-  "/favicon-512x512.png",
-  "/splash.png"
+const CACHE_NAME = 'dverse-v1';
+const ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/favicon.ico',
+  '/splash.png'
 ];
 
-// Install
-self.addEventListener("install", (event) => {
+self.addEventListener('install', (event) => {
+  // Skip waiting so the new SW activates immediately without waiting for
+  // existing tabs to close — required for the install prompt to fire reliably.
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+      return cache.addAll(ASSETS);
     })
   );
 });
 
-// Activate
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      )
-    )
-  );
+self.addEventListener('activate', (event) => {
+  // Take control of all open clients immediately after activation.
+  event.waitUntil(clients.claim());
 });
 
-// Fetch
-self.addEventListener("fetch", (event) => {
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request);
+    })
+  );
+});
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return (
