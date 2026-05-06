@@ -15,11 +15,14 @@ export function parseSlug(slug: string): { slug: string; id: string } {
   return { slug: slug.slice(0, idx), id: slug.slice(idx + 1) };
 }
 
-/** Gifted ids are non-numeric strings; TMDB ids are numeric. */
+/** Gifted ids are large int64 strings (16-19 digits). TMDB ids are ≤ 8 digits.
+ *  We distinguish them by digit count rather than by non-numeric characters,
+ *  because both are pure digit strings. */
 export function isGiftedId(id: string | number | undefined | null): boolean {
   if (id == null) return false;
-  const s = String(id);
-  return !/^\d+$/.test(s);
+  const s = String(id).trim();
+  // Pure digits AND long enough to be a Gifted int64 subjectId
+  return /^\d+$/.test(s) && s.length >= 12;
 }
 
 export function buildDetailsHref(type: "movie" | "tv" | "anime", id: string | number, title: string): string {
