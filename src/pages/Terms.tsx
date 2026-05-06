@@ -44,7 +44,7 @@ const Terms = () => {
         </section>
         <section>
           <h2 className="text-foreground font-semibold mb-1">8. Contact</h2>
-          <p>Questions about these Terms? Email <a href="mailto:legal@dverse.app" className="text-primary">legal@dverse.app</a>.</p>
+          <p>Questions about these Terms? Email <a href="mailto:support@dverse.name.ng" className="text-primary">support@dverse.name.ng</a>.</p>
         </section>
       </article>
     </div>
