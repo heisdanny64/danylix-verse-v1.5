@@ -43,7 +43,7 @@ function saveJSON<T>(key: string, value: T) {
 // Convert cloud watchlist item to local format
 function cloudToLocalWatchlist(item: CloudWatchlistItem): TMDBMovie & { mediaType: string } {
   return {
-    id: Number(item.content_id) || 0,
+    id: (/^\d+$/.test(item.content_id) ? Number(item.content_id) : item.content_id) as any,
     overview: "",
     poster_path: item.poster,
     backdrop_path: null,
@@ -59,7 +59,7 @@ function cloudToLocalWatchlist(item: CloudWatchlistItem): TMDBMovie & { mediaTyp
 function cloudToLocalContinue(item: CloudContinueItem): ContinueWatchingItem {
   return {
     movie: {
-      id: Number(item.content_id) || 0,
+      id: (/^\d+$/.test(item.content_id) ? Number(item.content_id) : item.content_id) as any,
       overview: "",
       poster_path: item.poster,
       backdrop_path: null,

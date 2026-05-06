@@ -3,6 +3,7 @@ import { Play } from "lucide-react";
 import { posterUrl, getDisplayInfo } from "@/lib/tmdb";
 import { useLibrary, type ContinueWatchingItem } from "@/lib/library";
 import { Progress } from "@/components/ui/progress";
+import { isGiftedId } from "@/lib/slug";
 
 const ContinueWatchingRow = () => {
   const { continueWatching } = useLibrary();
@@ -15,19 +16,20 @@ const ContinueWatchingRow = () => {
       <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
         {continueWatching.map((item: ContinueWatchingItem) => {
           const { title } = getDisplayInfo(item.movie);
-          const isAnimeItem = item.mediaType === "anime";
+          const playType: "movie" | "tv" = item.mediaType === "movie" ? "movie" : "tv";
           const link =
-            isAnimeItem
-              ? `/player/anime/${item.movie.id}?season=1&episode=${item.episode || 1}`
-              : item.mediaType === "tv"
-                ? `/player/tv/${item.movie.id}?season=${item.season || 1}&episode=${item.episode || 1}`
-                : `/player/movie/${item.movie.id}`;
+            playType === "tv"
+              ? `/player/tv/${item.movie.id}?season=${item.season || 1}&episode=${item.episode || 1}`
+              : `/player/movie/${item.movie.id}`;
 
-          // Anime cards use full URL poster_path
           const isAnimeCard = (item.movie as any)._isAnimeCard === true;
-          const imgSrc = isAnimeCard
-            ? item.movie.poster_path || "/placeholder.svg"
-            : posterUrl(item.movie.backdrop_path || item.movie.poster_path, "w300");
+          const isGifted = isGiftedId(item.movie.id);
+          const raw = item.movie.backdrop_path || item.movie.poster_path || "";
+          const imgSrc = !raw
+            ? "/placeholder.svg"
+            : isAnimeCard || isGifted || /^https?:\/\//i.test(raw)
+              ? raw
+              : posterUrl(raw, "w300");
 
           return (
             <Link key={`${item.movie.id}-${item.mediaType}`} to={link} className="flex-shrink-0 w-[160px] group">

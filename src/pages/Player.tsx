@@ -39,6 +39,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { srtUrlToVttBlobUrl } from "@/lib/subtitles";
+import { isGiftedId } from "@/lib/slug";
+import { usePlayerPrefs, cueScale } from "@/hooks/usePlayerPrefs";
 
 type SettingsView = "root" | "quality" | "subtitle" | "speed";
 const SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as const;
@@ -67,7 +69,7 @@ export default function Player() {
   // Anime now plays through the TV pipeline. Legacy /player/anime/* routes
   // are redirected by App.tsx.
   const contentType = (type as "movie" | "tv") || "movie";
-  const isGiftedSource = searchParams.get("source") === "gifted";
+  const isGiftedSource = searchParams.get("source") === "gifted" || isGiftedId(id);
   const numericId = Number(id);
   const season = Number(searchParams.get("season")) || 1;
   const episode = Number(searchParams.get("episode")) || 1;
@@ -445,15 +447,56 @@ export default function Player() {
     }
   }, [subtitleIdx, vttUrls.length]);
 
-  // Auto-enable English subtitle on first load if available.
+  const { prefs } = usePlayerPrefs();
+
+  // Auto-enable preferred subtitle language on first load if available.
   const subAutoSelectedRef = useRef(false);
   useEffect(() => {
     if (subAutoSelectedRef.current) return;
     if (!subtitles.length || !vttUrls.length) return;
-    const enIdx = subtitles.findIndex((s) => /^en/i.test(s.lan || ""));
-    if (enIdx >= 0) setSubtitleIdx(enIdx);
+    const wanted = (prefs.subtitleLang || "English").slice(0, 2).toLowerCase();
+    const map: Record<string, RegExp> = {
+      en: /^en/i, es: /^(es|spa)/i, fr: /^(fr|fra)/i, de: /^(de|ger|deu)/i,
+      it: /^it/i, pt: /^(pt|por)/i, ja: /^(ja|jap|jpn)/i, ko: /^(ko|kor)/i,
+      zh: /^(zh|chi|cmn)/i, hi: /^(hi|hin)/i, ar: /^(ar|ara)/i, ru: /^(ru|rus)/i, tu: /^(tr|tur)/i,
+    };
+    const re = map[wanted] ?? new RegExp(`^${wanted}`, "i");
+    let idx = subtitles.findIndex((s) => re.test(s.lan || ""));
+    if (idx < 0) idx = subtitles.findIndex((s) => /^en/i.test(s.lan || ""));
+    if (idx >= 0) setSubtitleIdx(idx);
     subAutoSelectedRef.current = true;
-  }, [subtitles, vttUrls]);
+  }, [subtitles, vttUrls, prefs.subtitleLang]);
+
+  // Auto-pick preferred quality once sources resolve.
+  const qualityAutoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (qualityAutoSelectedRef.current) return;
+    if (!sources.length) return;
+    const target = (prefs.quality || "Auto");
+    if (target !== "Auto") {
+      const targetN = parseInt(target, 10);
+      // Find the highest quality <= target.
+      let bestIdx = -1;
+      for (let i = 0; i < sources.length; i++) {
+        const n = qualityRank(sources[i].quality);
+        if (n <= targetN) { bestIdx = i; break; } // sources are sorted desc
+      }
+      if (bestIdx > 0) setQualityIdx(bestIdx);
+    }
+    qualityAutoSelectedRef.current = true;
+  }, [sources, prefs.quality]);
+
+  // Reset quality auto-pick when content changes.
+  useEffect(() => {
+    qualityAutoSelectedRef.current = false;
+  }, [subjectId, sourceEpisode]);
+
+  // Apply subtitle size via CSS variable on the player container.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    root.style.setProperty("--cue-scale", String(cueScale(prefs.subtitleSize)));
+  }, [prefs.subtitleSize]);
 
   // Reset subtitle auto-pick + next-episode highlight when episode/source changes.
   useEffect(() => {
@@ -544,9 +587,21 @@ export default function Player() {
           media_type: contentType,
         } as any;
         updateProgress(m, contentType as "movie" | "tv", pct, season, episode, cur, dur);
+      } else if (isGiftedSource && giftedInfo && id) {
+        const m = {
+          id: id as any,                              // keep gifted string id
+          title: giftedInfo.title,
+          overview: giftedInfo.overview ?? "",
+          poster_path: giftedInfo.imageUrl || giftedInfo.coverUrl || null,
+          backdrop_path: giftedInfo.coverUrl || giftedInfo.imageUrl || null,
+          vote_average: giftedInfo.rating ?? 0,
+          genre_ids: [],
+          media_type: contentType,
+        } as any;
+        updateProgress(m, contentType as "movie" | "tv", pct, season, episode, cur, dur);
       }
     };
-  }, [tmdbDetails, contentType, season, episode, updateProgress]);
+  }, [tmdbDetails, contentType, season, episode, updateProgress, isGiftedSource, giftedInfo, id]);
 
   useEffect(() => {
     const v = videoRef.current;

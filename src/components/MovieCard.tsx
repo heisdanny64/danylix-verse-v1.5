@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { posterUrl, getDisplayInfo, type TMDBMovie } from "@/lib/tmdb";
+import { buildDetailsHref } from "@/lib/slug";
 
 interface MovieCardProps {
   movie: TMDBMovie;
@@ -13,14 +14,8 @@ const MovieCard = ({ movie, mediaType, compact, variant = "portrait", hrefFor }:
   const { title, year } = getDisplayInfo(movie);
   const type = (movie.media_type as "movie" | "tv") || mediaType || "movie";
   const giftedId = (movie as any)._giftedId as string | undefined;
-
-  const link = hrefFor
-    ? hrefFor(movie)
-    : giftedId
-      ? `/details/${type}/${giftedId}?source=gifted`
-      : type === "tv"
-        ? `/details/tv/${movie.id}`
-        : `/details/movie/${movie.id}`;
+  const effectiveId = giftedId ?? movie.id;
+  const link = hrefFor ? hrefFor(movie) : buildDetailsHref(type, effectiveId, title);
 
   // Detect already-absolute URLs (Gifted) vs TMDB paths.
   const raw = movie.poster_path || "";
