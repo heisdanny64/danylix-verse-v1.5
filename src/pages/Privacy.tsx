@@ -36,7 +36,7 @@ const Privacy = () => {
         </section>
         <section>
           <h2 className="text-foreground font-semibold mb-1">Contact</h2>
-          <p>Privacy questions? Email <a href="mailto:privacy@dverse.app" className="text-primary">privacy@dverse.app</a>.</p>
+          <p>Privacy questions? Email <a href="mailto:support@dverse.name.ng" className="text-primary">support@dverse.name.ng</a>.</p>
         </section>
       </article>
     </div>
