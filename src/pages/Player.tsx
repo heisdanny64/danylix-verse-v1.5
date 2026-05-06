@@ -587,9 +587,21 @@ export default function Player() {
           media_type: contentType,
         } as any;
         updateProgress(m, contentType as "movie" | "tv", pct, season, episode, cur, dur);
+      } else if (isGiftedSource && giftedInfo && id) {
+        const m = {
+          id: id as any,                              // keep gifted string id
+          title: giftedInfo.title,
+          overview: giftedInfo.overview ?? "",
+          poster_path: giftedInfo.imageUrl || giftedInfo.coverUrl || null,
+          backdrop_path: giftedInfo.coverUrl || giftedInfo.imageUrl || null,
+          vote_average: giftedInfo.rating ?? 0,
+          genre_ids: [],
+          media_type: contentType,
+        } as any;
+        updateProgress(m, contentType as "movie" | "tv", pct, season, episode, cur, dur);
       }
     };
-  }, [tmdbDetails, contentType, season, episode, updateProgress]);
+  }, [tmdbDetails, contentType, season, episode, updateProgress, isGiftedSource, giftedInfo, id]);
 
   useEffect(() => {
     const v = videoRef.current;
