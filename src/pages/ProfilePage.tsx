@@ -173,7 +173,7 @@ const ProfilePage = () => {
 
       {/* Settings Rows */}
       <section className="px-4 space-y-2">
-        <SettingsRow icon={Settings} label="General Settings" onClick={() => {}} />
+        <SettingsRow icon={Settings} label="General Settings" onClick={() => navigate("/settings")} />
         <SettingsRow
           icon={Lock}
           label="Change Password"
@@ -200,9 +200,9 @@ const ProfilePage = () => {
             </Button>
           </div>
         )}
-        <SettingsRow icon={Info} label="About" onClick={() => {}} />
-        <SettingsRow icon={FileText} label="Terms of Service" onClick={() => {}} />
-        <SettingsRow icon={Shield} label="Privacy Policy" onClick={() => {}} />
+        <SettingsRow icon={Info} label="About" onClick={() => navigate("/about")} />
+        <SettingsRow icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
+        <SettingsRow icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />
       </section>
 
       {/* Sign Out */}
