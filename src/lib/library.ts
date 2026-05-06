@@ -126,21 +126,21 @@ export function useLibrary() {
     }
   }, [userId]);
 
-  const removeFromWatchlist = useCallback((id: number, mediaType?: string) => {
-    setWatchlist((prev) => prev.filter((m) => !(m.id === id && (!mediaType || m.mediaType === mediaType))));
+  const removeFromWatchlist = useCallback((id: number | string, mediaType?: string) => {
+    setWatchlist((prev) => prev.filter((m) => !(String(m.id) === String(id) && (!mediaType || m.mediaType === mediaType))));
     if (userId && mediaType) {
       removeFromCloudWatchlist(userId, String(id), mediaType);
     }
   }, [userId]);
 
   const isInWatchlist = useCallback(
-    (id: number, mediaType?: string) => watchlist.some((m) => m.id === id && (!mediaType || m.mediaType === mediaType)),
+    (id: number | string, mediaType?: string) => watchlist.some((m) => String(m.id) === String(id) && (!mediaType || m.mediaType === mediaType)),
     [watchlist]
   );
 
   const toggleWatchlist = useCallback((movie: TMDBMovie, mediaType: "movie" | "tv" | "anime" = "movie") => {
-    if (isInWatchlist(movie.id, mediaType)) {
-      removeFromWatchlist(movie.id, mediaType);
+    if (isInWatchlist(String(movie.id), mediaType)) {
+      removeFromWatchlist(String(movie.id), mediaType);
       return false;
     } else {
       addToWatchlist(movie, mediaType);
@@ -185,8 +185,8 @@ export function useLibrary() {
     [userId]
   );
 
-  const removeFromContinue = useCallback((id: number, mediaType?: string) => {
-    setContinueWatching((prev) => prev.filter((item) => !(item.movie.id === id && (!mediaType || item.mediaType === mediaType))));
+  const removeFromContinue = useCallback((id: number | string, mediaType?: string) => {
+    setContinueWatching((prev) => prev.filter((item) => !(String(item.movie.id) === String(id) && (!mediaType || item.mediaType === mediaType))));
     if (userId && mediaType) {
       removeFromCloudContinue(userId, String(id), mediaType);
     }
