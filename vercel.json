@@ -1,5 +1,9 @@
 {
   "rewrites": [
+    { "source": "/movie/:slug", "destination": "/api/og" },
+    { "source": "/tv/:slug", "destination": "/api/og" },
+    { "source": "/anime/:slug", "destination": "/api/og" },
+    { "source": "/details/:type/:id", "destination": "/api/og" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
