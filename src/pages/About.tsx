@@ -36,7 +36,7 @@ const About = () => {
         <h3 className="text-foreground font-semibold">Get in touch</h3>
         <p>
           Have a suggestion or found a bug? Reach out at{" "}
-          <a href="mailto:hello@dverse.app" className="text-primary">hello@dverse.app</a>.
+          <a href="mailto:support@dverse.name.ng" className="text-primary">support@dverse.name.ng</a>.
         </p>
       </article>
     </div>
