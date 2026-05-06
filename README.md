@@ -1,73 +1,109 @@
-# Welcome to your Lovable project
+# D.Verse (Danylix Verse)
 
-## Project info
+<p align="center">
+  <img src="/favicon-192.png" width="120" alt="D.Verse Logo" />
+</p>
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+**D.Verse** is a modern movie & TV discovery platform built for seamless streaming and downloads — powered by a unified system that combines reliable metadata with fast content delivery.
 
-## How can I edit this code?
+🌐 Live: https://dverse.name.ng  
+💸 Free for everyone. No subscriptions. No hidden costs.
 
-There are several ways of editing your application.
+---
 
-**Use Lovable**
+## ✨ Features
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- 🎬 Discover Movies & TV Shows in a clean, modern UI  
+- 🔍 Unified Search (TMDB + Gifted API)  
+- 📺 Instant Streaming with custom player  
+- ⬇️ High-quality Downloads with multiple options  
+- 🌍 Language Variants (Original / English, etc.)  
+- 🔄 Continue Watching (synced experience)  
+- ⚡ Fast, responsive, PWA-ready  
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+## 🧠 How it Works
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+D.Verse uses a **hybrid architecture**:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- **Metadata Layer** → Powered by [TMDB API](https://developer.themoviedb.org/)  
+- **Streaming & Downloads** → Powered by [Gifted Tech Movies API](https://movieapi.giftedtech.co.ke/docs)
 
-Follow these steps:
+```
+TMDB → Titles, posters, seasons, structure  
+Gifted API → Streaming links, downloads, variants  
+```
+
+This allows D.Verse to:
+- stay accurate with metadata  
+- support a wider range of content (including niche/global titles)  
+- deliver fast and reliable playback  
+
+---
+
+## 🚀 Getting Started (Local Setup)
+
+### Requirements
+- Node.js  
+- npm (or pnpm/yarn)  
+
+### Installation
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
 git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
 cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## 🔑 API Setup
 
-**Use GitHub Codespaces**
+To run this project, you’ll need:
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### 1. TMDB API Key  
+Get yours here:  
+👉 https://developer.themoviedb.org/
 
-## What technologies are used for this project?
+### 2. Gifted Tech Movies API Key  
+Get access here:  
+👉 https://movieapi.giftedtech.co.ke/docs  
 
-This project is built with:
+---
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## 🛠 Tech Stack
 
-## How can I deploy this project?
+- Vite  
+- React  
+- TypeScript  
+- Tailwind CSS  
+- shadcn/ui  
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+---
 
-## Can I connect a custom domain to my Lovable project?
+## 📦 Deployment
 
-Yes, you can!
+D.Verse is already live at:  
+👉 https://dverse.name.ng  
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+You can deploy your own version using platforms like Vercel or Netlify.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+---
+
+## ⚠️ Disclaimer
+
+D.Verse does not host any content.  
+All streaming and download links are provided by third-party APIs.
+
+---
+
+## 💡 Final Note
+
+D.Verse is built to be simple on the surface, but powerful underneath —  
+a fast, unified media experience without the usual complexity.
+
+---
+
+**Danny Daniels**
