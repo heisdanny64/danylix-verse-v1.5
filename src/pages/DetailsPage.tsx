@@ -1,4 +1,4 @@
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, Plus, Play, Check, Download } from "lucide-react";
 import { getMovieDetails, backdropUrl, getDisplayInfo, type TMDBEpisode } from "@/lib/tmdb";
@@ -13,12 +13,16 @@ import MovieRow from "@/components/MovieRow";
 import CastRow, { type CastRowItem } from "@/components/CastRow";
 import DownloadModal from "@/components/DownloadModal";
 import { getGiftedInfo } from "@/services/giftedApi";
+import { parseSlug, isGiftedId, buildDetailsHref } from "@/lib/slug";
+import ShareButton from "@/components/ShareButton";
 import { useState } from "react";
 
 const DetailsPage = () => {
-  const { type, id } = useParams<{ type: string; id: string }>();
-  const [searchParams] = useSearchParams();
-  const source = (searchParams.get("source") === "gifted" ? "gifted" : "tmdb") as "tmdb" | "gifted";
+  const { type, id: rawIdParam, slug: slugParam } = useParams<{ type: string; id?: string; slug?: string }>();
+  // Slug routes (/movie/title-id) provide `slug`; legacy routes (/details/movie/:id) provide `id`.
+  const id = slugParam ? parseSlug(slugParam).id : rawIdParam;
+  const isGifted = isGiftedId(id);
+  const source = (isGifted ? "gifted" : "tmdb") as "tmdb" | "gifted";
   const navigate = useNavigate();
   const { toast } = useToast();
   const { toggleWatchlist, isInWatchlist } = useLibrary();
@@ -26,7 +30,6 @@ const DetailsPage = () => {
 
   const contentType = ((type === "anime" ? "tv" : type) as "movie" | "tv") || "movie";
   const numericId = Number(id);
-  const isGifted = source === "gifted";
 
   const { data: tmdbDetail, isLoading: tmdbLoading } = useQuery({
     queryKey: ["detail", contentType, numericId],
@@ -125,8 +128,7 @@ const DetailsPage = () => {
   const seasons = contentType === "tv" ? detail.seasons?.filter((s: any) => s.season_number > 0) || [] : [];
 
   const handlePlayEpisode = (ep: TMDBEpisode) => {
-    const qs = isGifted ? `&source=gifted` : "";
-    navigate(`/player/tv/${id}?season=${ep.season_number}&episode=${ep.episode_number}${qs}`);
+    navigate(`/player/tv/${id}?season=${ep.season_number}&episode=${ep.episode_number}`);
   };
 
   const handleToggleWatchlist = () => {
@@ -194,10 +196,8 @@ const DetailsPage = () => {
           <Button
             className="flex-1 gap-1.5"
             onClick={() => {
-              const qs = isGifted ? `?source=gifted` : "";
-              const tvQs = isGifted ? `?season=1&episode=1&source=gifted` : `?season=1&episode=1`;
-              if (contentType === "movie") navigate(`/player/movie/${id}${qs}`);
-              else navigate(`/player/tv/${id}${tvQs}`);
+              if (contentType === "movie") navigate(`/player/movie/${id}`);
+              else navigate(`/player/tv/${id}?season=1&episode=1`);
             }}
           >
             <Play className="w-4 h-4 fill-current" />
@@ -207,6 +207,7 @@ const DetailsPage = () => {
             {inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             <span className="hidden md:inline">{inWatchlist ? "Added" : "Add to Library"}</span>
           </Button>
+          <ShareButton type={contentType} id={id ?? ""} title={title} overview={detail.overview} />
           <Button variant="outline" className="gap-1.5" onClick={() => setDownloadOpen(true)}>
             <Download className="w-4 h-4" />
           </Button>

@@ -65,14 +65,6 @@ const HomePage = () => {
 
   return (
     <div className="pb-24 min-h-screen">
-      <header className="absolute top-0 left-0 right-0 z-20 px-4 pt-6 pb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">
-          <span className="text-foreground">D.</span>
-          <span className="text-primary">Verse</span>
-        </h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Danylix Verse</p>
-      </header>
-
       <HeroBanner movies={hero.data ?? []} />
 
       <div className="px-4 my-4">
