@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, Plus, Play, Check, Download } from "lucide-react";
 import { getMovieDetails, backdropUrl, getDisplayInfo, type TMDBEpisode } from "@/lib/tmdb";
@@ -18,7 +18,12 @@ import ShareButton from "@/components/ShareButton";
 import { useState } from "react";
 
 const DetailsPage = () => {
-  const { type, id: rawIdParam, slug: slugParam } = useParams<{ type: string; id?: string; slug?: string }>();
+  const { type: typeParam, id: rawIdParam, slug: slugParam } = useParams<{ type: string; id?: string; slug?: string }>();
+  const { pathname } = useLocation();
+  
+  // Determine type from either the 'type' param (legacy) or the URL path (slug-based)
+  const type = typeParam || (pathname.startsWith("/movie/") ? "movie" : pathname.startsWith("/tv/") ? "tv" : pathname.startsWith("/anime/") ? "anime" : "movie");
+
   // Slug routes (/movie/title-id) provide `slug`; legacy routes (/details/movie/:id) provide `id`.
   const id = slugParam ? parseSlug(slugParam).id : rawIdParam;
   const isGifted = isGiftedId(id);

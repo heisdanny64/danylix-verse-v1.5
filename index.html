@@ -63,6 +63,17 @@
     <!-- React Entry -->
     <script type="module" src="/src/main.tsx"></script>
 
+    <!-- PWA Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('SW registered', reg))
+            .catch(err => console.error('SW registration failed', err));
+        });
+      }
+    </script>
+
     <!-- Splash Logic (FIXED PROPERLY) -->
     <script>
       const words = ["Movies", "Series", "Anime"];
