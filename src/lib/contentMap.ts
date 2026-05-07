@@ -152,16 +152,22 @@ export async function findGiftedMatch(opts: MapOptions): Promise<string | number
   const score = (r: { title: string; year?: number | string; releaseDate?: string; type?: string }): number => {
     const normResult = normalizeForMatch(r.title);
 
-    // Title must match — exact normalized match scores highest
+    // Exact normalized match
     const titleMatch = normResult === normTarget;
-    // Containment match — result title starts with our title (e.g. "Arcane S2" contains "Arcane")
-    const containsMatch = normResult.startsWith(normTarget + " ") || normResult === normTarget;
+    // Containment match — result title starts with our title followed by a
+    // season label (e.g. "Arcane S2" contains "Arcane", "Invincible S1-S4" contains "Invincible")
+    const containsMatch = !titleMatch && (
+      normResult.startsWith(normTarget + " ") ||
+      normResult === normTarget
+    );
+    // Detect season label in the result title — "S1", "S2", "S1-S4", "Season 2" etc.
+    const hasSeasonLabel = /\b(s\d+|season\s*\d+)\b/i.test(r.title);
 
     if (!titleMatch && !containsMatch) return -Infinity;
 
-    let s = titleMatch ? 1.0 : 0.8; // exact > containment
+    let s = titleMatch ? 1.0 : 0.8;
 
-    // Year comparison — strip month/day from Gifted's full date
+    // Year comparison
     if (opts.year) {
       const ry = Number(
         r.year
@@ -172,11 +178,18 @@ export async function findGiftedMatch(opts: MapOptions): Promise<string | number
       );
       if (ry) {
         const diff = Math.abs(ry - opts.year);
-        if (diff > yearTolerance) return -Infinity; // hard reject — wrong year
-        s += diff === 0 ? 0.3 : diff === 1 ? 0.15 : 0.05;
+        // For TV containment matches with a season label (e.g. "Arcane S2"),
+        // don't hard-reject on year — Gifted indexes by the season's air date,
+        // not the show's premiere year. Both S1 and S2 share the same subjectId
+        // so any season entry is a valid match.
+        const isSeasonEntry = opts.type === "tv" && containsMatch && hasSeasonLabel;
+        const effectiveTolerance = isSeasonEntry ? 10 : yearTolerance;
+
+        if (diff > effectiveTolerance) return -Infinity;
+        s += diff === 0 ? 0.3 : diff === 1 ? 0.15 : diff <= 3 ? 0.05 : 0;
+      } else {
+        s -= 0.1;
       }
-      // No year on result — mild penalty, don't reject
-      else s -= 0.1;
     }
 
     // Type bonus
