@@ -14,8 +14,9 @@ import CastRow, { type CastRowItem } from "@/components/CastRow";
 import DownloadModal from "@/components/DownloadModal";
 import { getGiftedInfo } from "@/services/giftedApi";
 import { parseSlug, isGiftedId, buildDetailsHref } from "@/lib/slug";
+import { preloadMatch } from "@/lib/contentMap";
 import ShareButton from "@/components/ShareButton";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const DetailsPage = () => {
   const { type: typeParam, id: rawIdParam, slug: slugParam } = useParams<{ type?: string; id?: string; slug?: string }>();
@@ -94,6 +95,20 @@ const DetailsPage = () => {
     : undefined;
 
   const tmdbTitle = detail ? getDisplayInfo(detail as any).title : "";
+  const { year } = detail ? getDisplayInfo(detail as any) : { year: null };
+
+  // Background mapping preload — fires as soon as title + year are available.
+  // Caches the Gifted subjectId in localStorage so Player loads instantly.
+  // Runs only for TMDB-sourced content (Gifted content already has its subjectId).
+  useEffect(() => {
+    if (isGifted || !tmdbTitle || !numericId) return;
+    preloadMatch({
+      title: tmdbTitle,
+      year: year ? Number(year) : null,
+      type: contentType,
+      tmdbId: numericId,
+    });
+  }, [isGifted, tmdbTitle, year, contentType, numericId]);
 
   const recTitle = isGifted ? (giftedDetail?.title || "") : tmdbTitle;
 
@@ -129,7 +144,7 @@ const DetailsPage = () => {
     );
   }
 
-  const { title, year } = getDisplayInfo(detail as any);
+  const { title } = getDisplayInfo(detail as any);
   const inWatchlist = isInWatchlist(detail.id, contentType);
   const seasons = contentType === "tv" ? detail.seasons?.filter((s: any) => s.season_number > 0) || [] : [];
 

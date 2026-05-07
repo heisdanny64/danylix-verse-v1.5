@@ -35,6 +35,7 @@ import {
   type GiftedSource,
   type GiftedSubtitle,
 } from "@/services/giftedApi";
+import { preloadMatch } from "@/lib/contentMap";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -103,8 +104,11 @@ export default function Player() {
 
   const totalEpisodes = seasonData?.episodes?.length || 0;
   const isMovie = contentType === "movie";
-  const hasNext = !isMovie && (totalEpisodes === 0 || episode < totalEpisodes);
-  const hasPrev = !isMovie && episode > 1;
+  const totalSeasons = tmdbDetails?.number_of_seasons || giftedInfo?.seasons?.length || 0;
+  const isLastEpisode = totalEpisodes > 0 && episode >= totalEpisodes;
+  const hasNextSeason = isLastEpisode && totalSeasons > 0 && season < totalSeasons;
+  const hasNext = !isMovie && (totalEpisodes === 0 || episode < totalEpisodes || hasNextSeason);
+  const hasPrev = !isMovie && (episode > 1 || season > 1);
 
   // Resolved subjectId for Gifted.
   // If `source=gifted` was passed (DetailsPage routed from a Gifted card),
@@ -504,11 +508,42 @@ export default function Player() {
     setNextHighlighted(false);
   }, [subjectId, sourceEpisode]);
 
-  // 80% next-episode highlight trigger.
+  // 90% next-episode highlight trigger + background preload of next episode sources
+  const preloadedNextRef = useRef(false);
   useEffect(() => {
-    if (nextHighlighted || !hasNext || !duration) return;
-    if (position / duration >= 0.8) setNextHighlighted(true);
-  }, [position, duration, hasNext, nextHighlighted]);
+    if (!hasNext || !duration) return;
+    if (position / duration < 0.9) return;
+
+    // Highlight the next button
+    if (!nextHighlighted) setNextHighlighted(true);
+
+    // Preload next episode sources once — cache result, clear on failure
+    if (preloadedNextRef.current) return;
+    preloadedNextRef.current = true;
+
+    const nextSeason = isLastEpisode && hasNextSeason ? season + 1 : season;
+    const nextEp = isLastEpisode && hasNextSeason ? 1 : episode + 1;
+
+    if (!subjectId) return;
+
+    getGiftedSources(subjectId, nextSeason, nextEp)
+      .then((data) => {
+        if (!data?.results?.length) {
+          // No sources returned — clear so Player retries fresh on navigation
+          preloadedNextRef.current = false;
+        }
+        // Results are silently cached by React Query via the same query key
+        // Player will use them when it navigates to the next episode
+      })
+      .catch(() => {
+        preloadedNextRef.current = false; // clear cache so retry is fresh
+      });
+  }, [position, duration, hasNext, nextHighlighted, subjectId, season, episode, isLastEpisode, hasNextSeason]);
+
+  // Reset preload ref when episode changes
+  useEffect(() => {
+    preloadedNextRef.current = false;
+  }, [subjectId, sourceEpisode, sourceSeason]);
 
   // Seed resume position from cloud on first load.
   // We also create a promise here that resolveResumeRef resolves when the
@@ -693,14 +728,20 @@ export default function Player() {
   }, []);
 
   const goToEpisode = useCallback((delta: 1 | -1) => {
-    const next = episode + delta;
     cancelAutoNext();
-    // Use the raw string `id` for gifted sources to avoid large-integer precision loss
-    // when the subjectId is cast to a JS Number (> 2^53 loses digits).
     const navId = isGiftedSource ? id : numericId;
     const sourceQs = isGiftedSource ? "&source=gifted" : "";
-    navigate(`/player/tv/${navId}?season=${season}&episode=${next}${sourceQs}`, { replace: true });
-  }, [episode, navigate, id, numericId, season, cancelAutoNext, isGiftedSource]);
+
+    if (delta === 1 && isLastEpisode && hasNextSeason) {
+      // End of season — jump to next season episode 1
+      navigate(`/player/tv/${navId}?season=${season + 1}&episode=1${sourceQs}`, { replace: true });
+    } else if (delta === -1 && episode === 1 && season > 1) {
+      // Start of season — jump to previous season (last episode unknown, go to ep 1)
+      navigate(`/player/tv/${navId}?season=${season - 1}&episode=1${sourceQs}`, { replace: true });
+    } else {
+      navigate(`/player/tv/${navId}?season=${season}&episode=${episode + delta}${sourceQs}`, { replace: true });
+    }
+  }, [episode, season, navigate, id, numericId, cancelAutoNext, isGiftedSource, isLastEpisode, hasNextSeason]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
