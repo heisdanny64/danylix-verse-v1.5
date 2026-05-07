@@ -862,38 +862,43 @@ export default function Player() {
         ))}
       </video>
 
-      {/* Loading */}
-      {(initialLoading || bufferLoading) && !hasFatal && (
-        <div className="absolute inset-0 grid place-items-center pointer-events-none z-10">
-          <Loader2 className="w-12 h-12 text-primary animate-spin" />
+      {/* Full-screen loading overlay */}
+      {(initialLoading || (bufferLoading && !streamError)) && !hasFatal && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-5 bg-black pointer-events-none">
+          <Loader2 className="w-14 h-14 text-primary animate-spin" />
+          <p className="text-base font-semibold text-foreground">
+            {initialLoading ? "Finding your stream…" : "Preparing your stream…"}
+          </p>
         </div>
       )}
 
       {/* Fatal error overlay */}
       {hasFatal && (
-        <div className="absolute inset-0 z-30 grid place-items-center bg-black/80 backdrop-blur-sm px-6">
-          <div className="text-center max-w-sm space-y-4">
-            <AlertCircle className="w-12 h-12 mx-auto text-destructive" />
-            <p className="text-lg font-semibold">Content not available right now</p>
-            <p className="text-sm text-muted-foreground">
-              {noMatch
-                ? "We couldn't find this title in the streaming catalog."
-                : "No playable sources were returned."}
-            </p>
-            <div className="flex items-center justify-center gap-2">
-              <button
-                onClick={(e) => { e.stopPropagation(); setStreamError(false); refetchMatch(); refetchSources(); }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-sm"
-              >
-                <RefreshCw className="w-4 h-4" /> Retry
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleBack(); }}
-                className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-background/40 backdrop-blur-md hover:bg-background/70 text-sm"
-              >
-                Back
-              </button>
-            </div>
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black px-6">
+          <AlertCircle className="w-12 h-12 text-destructive" />
+          <p className="text-lg font-semibold text-center">
+            {noMatch ? "Title Not Found" : noSources ? "No Sources Available" : "Playback Failed"}
+          </p>
+          <p className="text-sm text-muted-foreground text-center max-w-sm">
+            {noMatch
+              ? "We couldn't find this title in our streaming catalog. It may not be available yet."
+              : noSources
+                ? "This title was found but has no streaming sources available right now. Try again later."
+                : "All available sources failed to load. Please retry or go back."}
+          </p>
+          <div className="flex items-center justify-center gap-2 mt-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); setStreamError(false); refetchMatch(); refetchSources(); }}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-sm"
+            >
+              <RefreshCw className="w-4 h-4" /> Retry
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleBack(); }}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-white/10 hover:bg-white/20 text-sm"
+            >
+              Back
+            </button>
           </div>
         </div>
       )}
