@@ -27,7 +27,7 @@ interface CacheEntry {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CACHE_KEY = "dverse_content_map_v1";
-const TTL_MS = 10 * 60 * 1000; // 10 minutes
+const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * Manual overrides — key is "type:tmdbId", value is the Gifted subjectId.
