@@ -248,6 +248,9 @@ export default function Player() {
   const [volume, setVolume] = useState(1);
   const [showControls, setShowControls] = useState(true);
   const [bufferLoading, setBufferLoading] = useState(true);
+  // Tracks whether playback has started at least once for this source.
+  // Used to distinguish initial stream loading from mid-playback buffering.
+  const hasStartedPlayingRef = useRef(false);
   const [streamError, setStreamError] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPreview, setSeekPreview] = useState(0);
@@ -273,6 +276,7 @@ export default function Player() {
   useEffect(() => {
     setStreamError(false);
     setBufferLoading(true);
+    hasStartedPlayingRef.current = false;
 
     const video = videoRef.current;
     if (!video || !streamUrl) return;
@@ -389,7 +393,7 @@ export default function Player() {
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onPlay = () => setPlaying(true);
+    const onPlay = () => { setPlaying(true); hasStartedPlayingRef.current = true; };
     const onPause = () => setPlaying(false);
     const onTime = () => {
       if (isSeekingRef.current) return;
@@ -862,13 +866,20 @@ export default function Player() {
         ))}
       </video>
 
-      {/* Full-screen loading overlay */}
-      {(initialLoading || (bufferLoading && !streamError)) && !hasFatal && (
+      {/* Full-screen loading overlay — only shown before playback starts */}
+      {(initialLoading || (bufferLoading && !hasStartedPlayingRef.current)) && !hasFatal && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-5 bg-black pointer-events-none">
           <Loader2 className="w-14 h-14 text-primary animate-spin" />
           <p className="text-base font-semibold text-foreground">
             {initialLoading ? "Finding your stream…" : "Preparing your stream…"}
           </p>
+        </div>
+      )}
+
+      {/* Mid-playback buffer spinner — small, unobtrusive, video stays visible */}
+      {bufferLoading && hasStartedPlayingRef.current && !hasFatal && (
+        <div className="absolute inset-0 z-10 grid place-items-center pointer-events-none">
+          <Loader2 className="w-10 h-10 text-primary animate-spin opacity-80" />
         </div>
       )}
 
