@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeTitle as canonicalize, giftedToMediaItem, type MediaItem } from "@/lib/media";
+import { findGiftedMatch, type MapOptions } from "@/lib/contentMap";
 
 export interface GiftedSource {
   quality: string;
@@ -30,18 +31,6 @@ export interface GiftedSearchItem {
 interface GiftedSourcesResponse {
   results?: GiftedSource[];
   subtitles?: GiftedSubtitle[];
-}
-
-const SUBJECT_CACHE_KEY = "dverse_gifted_subject_cache_v11";
-
-function loadCache<T extends Record<string, any>>(key: string): T {
-  try {
-    const raw = sessionStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : ({} as T);
-  } catch { return {} as T; }
-}
-function saveCache(key: string, value: Record<string, any>) {
-  try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* noop */ }
 }
 
 async function callProxy<T>(path: string, query: Record<string, string | number> = {}): Promise<T> {
@@ -139,94 +128,18 @@ export interface MatchOptions {
   episodeCount?: number | null;
 }
 
-// Detects a season label in a Gifted result title (single or range)
-const SEASON_LABEL_RX = /\b(s\d+(\s*-\s*s?\d+)?|season\s*\d+)\b/i;
-
+/**
+ * Find the Gifted subjectId for a TMDB title.
+ * Delegates to contentMap.ts which owns all matching and caching logic.
+ */
 export async function findBestMatch(opts: MatchOptions): Promise<string | number | null> {
-  // One cache entry per show/movie. Gifted uses the same subjectId for all
-  // seasons of a show — season/episode routing is done in getGiftedSources.
-  const cacheKey = `${opts.type || "x"}:${opts.externalId}`;
-  const cache = loadCache<Record<string, string | number | null>>(SUBJECT_CACHE_KEY);
-  if (cacheKey in cache && cache[cacheKey] != null) return cache[cacheKey];
-
-  const targetNorm = normalizeTitle(opts.title);
-  const rawLower = opts.title.trim().toLowerCase();
-  const queries = Array.from(new Set(
-    [opts.title, targetNorm !== rawLower ? targetNorm : null].filter(Boolean) as string[]
-  ));
-  const queryHasVariant = /\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/i.test(opts.title || "");
-  const isSingleToken = !opts.title.trim().includes(" ");
-
-  let best: { id: string | number; score: number } | null = null;
-  let exact: { id: string | number; score: number } | null = null;
-
-  const scoreCandidate = (r: GiftedSearchItem) => {
-    if (!r?.subjectId) return;
-    const sim = titleSimilarity(opts.title, r.title || "");
-    if (sim < 0.3) return;
-
-    let score = sim;
-    const rTitle = r.title || "";
-
-    // Penalize variant tokens unless the query asked for them
-    if (!queryHasVariant && /\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/i.test(rTitle)) {
-      score -= 0.25;
-    }
-
-    // Year scoring
-    if (opts.year) {
-      const ry = Number(r.year ?? 0);
-      if (ry) {
-        const diff = Math.abs(ry - opts.year);
-        if (isSingleToken) {
-          // Single-token titles: no hard rejection — Gifted may index a different
-          // season's date than the premiere year (e.g. Arcane S2 date for the show)
-          if (diff === 0) score += 0.25;
-          else if (diff === 1) score += 0.1;
-          else if (diff <= 3) score -= 0.05;
-          else score -= 0.2;
-        } else {
-          if (diff > 3) return;
-          score += diff === 0 ? 0.25 : diff === 1 ? 0.1 : 0;
-        }
-      } else {
-        score -= 0.05;
-      }
-    }
-
-    // Type bonus/penalty
-    if (opts.type && r.type) {
-      score += r.type === opts.type ? 0.1 : -0.35;
-    }
-
-    const rNorm = normalizeTitle(rTitle);
-    const isExact = rNorm === targetNorm
-      || rNorm.startsWith(targetNorm + " ")
-      || rNorm.includes(" " + targetNorm + " ");
-    if (isExact && (!exact || score > exact.score)) {
-      exact = { id: r.subjectId, score };
-    }
-    if (!best || score > best.score) best = { id: r.subjectId, score };
-  };
-
-  for (const q of queries) {
-    const results = await searchGifted(q, 1);
-    results.forEach(scoreCandidate);
-    if (best && best.score >= 0.95) break;
-  }
-
-  if ((!best || best.score < 0.7) && queries[0]) {
-    const page2 = await searchGifted(queries[0], 2);
-    page2.forEach(scoreCandidate);
-  }
-
-  const winner = exact ?? best;
-  const picked = winner && winner.score >= 0.65 ? winner.id : null;
-  if (picked != null) {
-    cache[cacheKey] = picked;
-    saveCache(SUBJECT_CACHE_KEY, cache);
-  }
-  return picked;
+  if (!opts.title || !opts.externalId) return null;
+  return findGiftedMatch({
+    title: opts.title,
+    year: opts.year ?? null,
+    type: opts.type || "movie",
+    tmdbId: opts.externalId,
+  });
 }
 
 export async function getGiftedSources(
