@@ -110,7 +110,15 @@ export default function Player() {
   const hasNext = !isMovie && (totalEpisodes === 0 || episode < totalEpisodes || hasNextSeason);
   const hasPrev = !isMovie && (episode > 1 || season > 1);
 
-  // Resolved subjectId for Gifted.
+  // Fetch previous season data so going back from E1 lands on the last episode
+  // of the previous season rather than always defaulting to E1
+  const prevSeason = season - 1;
+  const { data: prevSeasonData } = useQuery({
+    queryKey: ["player-season", numericId, prevSeason],
+    queryFn: () => getSeasonDetails(numericId, prevSeason),
+    enabled: !isGiftedSource && contentType === "tv" && !!numericId && Number.isFinite(numericId) && episode === 1 && season > 1,
+    staleTime: 60 * 60 * 1000,
+  });
   // If `source=gifted` was passed (DetailsPage routed from a Gifted card),
   // skip the TMDB → Gifted matching round trip and use the URL id directly.
   const matchEnabled = !isGiftedSource && !!title;
@@ -733,15 +741,16 @@ export default function Player() {
     const sourceQs = isGiftedSource ? "&source=gifted" : "";
 
     if (delta === 1 && isLastEpisode && hasNextSeason) {
-      // End of season — jump to next season episode 1
+      // End of season — jump to next season E1
       navigate(`/player/tv/${navId}?season=${season + 1}&episode=1${sourceQs}`, { replace: true });
     } else if (delta === -1 && episode === 1 && season > 1) {
-      // Start of season — jump to previous season (last episode unknown, go to ep 1)
-      navigate(`/player/tv/${navId}?season=${season - 1}&episode=1${sourceQs}`, { replace: true });
+      // Start of season — jump to previous season's last episode
+      const prevLastEp = prevSeasonData?.episodes?.length || 1;
+      navigate(`/player/tv/${navId}?season=${prevSeason}&episode=${prevLastEp}${sourceQs}`, { replace: true });
     } else {
       navigate(`/player/tv/${navId}?season=${season}&episode=${episode + delta}${sourceQs}`, { replace: true });
     }
-  }, [episode, season, navigate, id, numericId, cancelAutoNext, isGiftedSource, isLastEpisode, hasNextSeason]);
+  }, [episode, season, prevSeason, navigate, id, numericId, cancelAutoNext, isGiftedSource, isLastEpisode, hasNextSeason, prevSeasonData]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
