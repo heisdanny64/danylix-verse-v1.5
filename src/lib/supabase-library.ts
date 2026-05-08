@@ -94,7 +94,7 @@ export async function updateCloudProgress(
   currentTime?: number,
   duration?: number,
 ) {
-  if (progress >= 90) {
+  if (progress >= 95) {
     await supabase
       .from("continue_watching")
       .delete()

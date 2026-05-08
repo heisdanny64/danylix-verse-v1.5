@@ -16,6 +16,77 @@ import { posterUrl } from "./tmdb";
 
 const WATCHLIST_KEY = "dverse_watchlist";
 const CONTINUE_KEY = "dverse_continue_watching";
+const ACTIVE_USER_KEY = "dverse_active_user";
+const RESUME_KEY = "dverse_resume_positions";
+
+// ─── Resume position localStorage helpers ────────────────────────────────────
+// Stored as a flat map: { "contentId:contentType:season:episode": currentTimeSec }
+// Keyed by content+episode so movies, TV episodes, and Gifted content all
+// have independent resume positions.
+
+function resumeMapKey(
+  contentId: string,
+  contentType: string,
+  season?: number,
+  episode?: number,
+): string {
+  return `${contentId}:${contentType}:${season ?? 0}:${episode ?? 0}`;
+}
+
+export function saveLocalResume(
+  contentId: string,
+  contentType: string,
+  currentTime: number,
+  season?: number,
+  episode?: number,
+) {
+  try {
+    const map = loadJSON<Record<string, number>>(RESUME_KEY, {});
+    const key = resumeMapKey(contentId, contentType, season, episode);
+    if (currentTime > 5) {
+      map[key] = currentTime;
+    } else {
+      delete map[key]; // don't store near-zero positions
+    }
+    saveJSON(RESUME_KEY, map);
+  } catch { /* noop */ }
+}
+
+export function getLocalResume(
+  contentId: string,
+  contentType: string,
+  season?: number,
+  episode?: number,
+): number {
+  try {
+    const map = loadJSON<Record<string, number>>(RESUME_KEY, {});
+    return map[resumeMapKey(contentId, contentType, season, episode)] ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function clearLocalResume(
+  contentId: string,
+  contentType: string,
+  season?: number,
+  episode?: number,
+) {
+  try {
+    const map = loadJSON<Record<string, number>>(RESUME_KEY, {});
+    delete map[resumeMapKey(contentId, contentType, season, episode)];
+    saveJSON(RESUME_KEY, map);
+  } catch { /* noop */ }
+}
+
+/** Clear all local library data. Called when the active user changes. */
+function clearLocalLibrary() {
+  try {
+    localStorage.removeItem(WATCHLIST_KEY);
+    localStorage.removeItem(CONTINUE_KEY);
+    localStorage.removeItem(RESUME_KEY);
+  } catch { /* noop */ }
+}
 
 export interface ContinueWatchingItem {
   movie: TMDBMovie;
@@ -89,6 +160,23 @@ export function useLibrary() {
   );
   const [cloudLoaded, setCloudLoaded] = useState(false);
 
+  // Detect user switching — clear local data so previous account's library
+  // never bleeds into a different account before cloud sync completes.
+  useEffect(() => {
+    const storedUser = localStorage.getItem(ACTIVE_USER_KEY);
+    const currentUser = userId ?? null;
+    if (storedUser !== currentUser) {
+      clearLocalLibrary();
+      setWatchlist([]);
+      setContinueWatching([]);
+      setCloudLoaded(false);
+      try {
+        if (currentUser) localStorage.setItem(ACTIVE_USER_KEY, currentUser);
+        else localStorage.removeItem(ACTIVE_USER_KEY);
+      } catch { /* noop */ }
+    }
+  }, [userId]);
+
   // Sync from cloud on login
   useEffect(() => {
     if (!userId) { setCloudLoaded(false); return; }
@@ -158,18 +246,33 @@ export function useLibrary() {
       currentTime?: number,
       duration?: number,
     ) => {
+      const contentId = String(movie.id);
+
+      // Always save resume position to localStorage — works for guests too
+      if (currentTime && currentTime > 5) {
+        saveLocalResume(contentId, mediaType, currentTime, season, episode);
+      }
+
       setContinueWatching((prev) => {
-        const filtered = prev.filter((item) => !(item.movie.id === movie.id && item.mediaType === mediaType));
-        if (progress >= 90) return filtered;
+        const filtered = prev.filter(
+          (item) => !(String(item.movie.id) === contentId && item.mediaType === mediaType)
+        );
+        // Keep entry until 95% — previously 90% which caused resume to fail
+        if (progress >= 95) {
+          clearLocalResume(contentId, mediaType, season, episode);
+          return filtered;
+        }
         return [
           { movie, mediaType, progress, season, episode, updatedAt: Date.now() },
           ...filtered,
         ];
       });
+
+      // Sync to Supabase in the background for signed-in users
       if (userId) {
         updateCloudProgress(
           userId,
-          String(movie.id),
+          contentId,
           mediaType,
           getTitle(movie),
           getPoster(movie),
@@ -192,7 +295,7 @@ export function useLibrary() {
     }
   }, [userId]);
 
-  const activeContinueWatching = continueWatching.filter(item => item.progress < 90);
+  const activeContinueWatching = continueWatching.filter(item => item.progress < 95);
 
   return {
     watchlist,
