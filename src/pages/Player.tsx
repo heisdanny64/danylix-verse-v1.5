@@ -27,7 +27,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { getMovieDetails, getSeasonDetails, getDisplayInfo } from "@/lib/tmdb";
-import { useLibrary } from "@/lib/library";
+import { useLibrary, getLocalResume, saveLocalResume } from "@/lib/library";
 import {
   findBestMatch,
   getGiftedSources,
@@ -560,21 +560,31 @@ export default function Player() {
     preloadedNextRef.current = false;
   }, [subjectId, sourceEpisode, sourceSeason]);
 
-  // Seed resume position from cloud on first load.
-  // We also create a promise here that resolveResumeRef resolves when the
-  // fetch completes — handleReady awaits it to avoid the race condition.
+  // Seed resume position — localStorage first (instant, works for guests),
+  // fall back to Supabase only when no local record exists and user is signed in.
   useEffect(() => {
     resumeRef.current = 0;
-    // Create a fresh promise for this load. handleReady will await it.
+    // Reset the resume promise for this load
     resumeReadyRef.current = new Promise<void>((resolve) => {
       resolveResumeRef.current = resolve;
     });
 
-    // Use the correct content id — Gifted uses the raw string subjectId,
-    // TMDB uses the numeric id. Never cast Gifted ids through Number().
     const contentId = isGiftedSource ? String(id) : String(numericId);
+    if (!contentId || contentId === "0" || contentId === "NaN") {
+      resolveResumeRef.current();
+      return;
+    }
 
-    if (!user?.id || !contentId || contentId === "0" || contentId === "NaN") {
+    // 1. Check localStorage first — instant, no network
+    const localTime = getLocalResume(contentId, contentType, season, episode);
+    if (localTime > 5) {
+      resumeRef.current = localTime;
+      resolveResumeRef.current(); // unblock handleReady immediately
+      return;
+    }
+
+    // 2. No local record — fall back to Supabase for signed-in users
+    if (!user?.id) {
       resolveResumeRef.current();
       return;
     }
@@ -591,8 +601,6 @@ export default function Player() {
           .maybeSingle();
 
         if (!cancelled && data) {
-          // For movies, Supabase may store season/episode as null OR as 1/1
-          // depending on how updateProgress was called. Accept both.
           const seasonMatch = isMovie
             ? (data.season == null || data.season === 1)
             : (data.season ?? null) === season;
@@ -602,17 +610,18 @@ export default function Player() {
 
           if (seasonMatch && episodeMatch && data.current_time_sec > 5) {
             resumeRef.current = data.current_time_sec;
+            // Backfill localStorage so next visit is instant
+            saveLocalResume(contentId, contentType, data.current_time_sec, season, episode);
           }
         }
       } finally {
-        // Always resolve — even on error — so handleReady is never blocked.
         if (!cancelled) resolveResumeRef.current();
       }
     })();
 
     return () => {
       cancelled = true;
-      resolveResumeRef.current(); // unblock handleReady on cleanup
+      resolveResumeRef.current();
     };
   }, [user?.id, numericId, id, isGiftedSource, contentType, season, episode, isMovie]);
 
