@@ -312,15 +312,14 @@ export default function Player() {
       /\/hls\//i.test(streamPath);
 
     const handleReady = async () => {
-      // Ignore if this callback belongs to a superseded load.
       if (currentLoadId !== loadIdRef.current) return;
       setBufferLoading(false);
-      // Wait for the Supabase resume fetch to finish before seeking.
-      // Without this await the seek happens before resumeRef is populated
-      // on slower connections, causing playback to always start at 0.
       await resumeReadyRef.current;
-      if (currentLoadId !== loadIdRef.current) return; // re-check after await
+      if (currentLoadId !== loadIdRef.current) return;
       if (resumeRef.current > 0) {
+        // Mark as started before seeking — the seek fires a `waiting` event
+        // which would trigger the full black overlay if this is still false.
+        hasStartedPlayingRef.current = true;
         try { video.currentTime = resumeRef.current; } catch { /* noop */ }
         resumeRef.current = 0;
       }
@@ -446,8 +445,12 @@ export default function Player() {
     if (videoRef.current) videoRef.current.playbackRate = speed;
   }, [speed]);
 
-  // Quality switch: preserve position + play state
+  // Quality switch: preserve position + play state.
+  // Guard: only overwrite resumeRef if the initial resume has already been
+  // applied — otherwise quality auto-select fires at position=0 and clobbers
+  // the saved timestamp before handleReady gets to use it.
   useEffect(() => {
+    if (!initialResumeAppliedRef.current) return;
     resumeRef.current = position;
     wasPlayingRef.current = playing;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -567,8 +570,12 @@ export default function Player() {
       resolveResumeRef.current = resolve;
     });
 
-    if (!user?.id || !numericId) {
-      resolveResumeRef.current(); // nothing to fetch, unblock immediately
+    // Use the correct content id — Gifted uses the raw string subjectId,
+    // TMDB uses the numeric id. Never cast Gifted ids through Number().
+    const contentId = isGiftedSource ? String(id) : String(numericId);
+
+    if (!user?.id || !contentId || contentId === "0" || contentId === "NaN") {
+      resolveResumeRef.current();
       return;
     }
 
@@ -579,7 +586,7 @@ export default function Player() {
           .from("continue_watching")
           .select("current_time_sec, season, episode")
           .eq("user_id", user.id)
-          .eq("content_id", String(numericId))
+          .eq("content_id", contentId)
           .eq("content_type", contentType)
           .maybeSingle();
 
@@ -607,7 +614,7 @@ export default function Player() {
       cancelled = true;
       resolveResumeRef.current(); // unblock handleReady on cleanup
     };
-  }, [user?.id, numericId, contentType, season, episode, isMovie]);
+  }, [user?.id, numericId, id, isGiftedSource, contentType, season, episode, isMovie]);
 
   // Persist progress: every 5s, on pause, on ended, on unmount/unload.
   const persistRef = useRef<() => void>(() => {});
