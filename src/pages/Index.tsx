@@ -57,7 +57,6 @@ const HomePage = () => {
     [trendingSeries.data, trendingIds]
   );
 
-  // Anime row: TMDB candidates + AniList verification
   const anime = useQuery({
     queryKey: ["anime-tmdb-verified"],
     queryFn: async () => {
@@ -67,13 +66,10 @@ const HomePage = () => {
     staleTime: 30 * 60 * 1000,
   });
 
-  // Nollywood row (Gifted)
   const nollywood = useQuery({
     queryKey: ["nollywood-gifted"],
     queryFn: async () =>
-      (await getNollywoodFromGifted()).map(
-        mediaToTmdbCard
-      ) as TMDBMovie[],
+      (await getNollywoodFromGifted()).map(mediaToTmdbCard) as TMDBMovie[],
     staleTime: 15 * 60 * 1000,
   });
 
@@ -142,143 +138,42 @@ const HomePage = () => {
       </div>
 
       <div className="space-y-6">
-        <MovieRow
-          title="Trending Now"
-          movies={trendingNow.data ?? []}
-          isLoading={trendingNow.isLoading}
-          slug="trending-today"
-        />
-
+        <MovieRow title="Trending Now" movies={trendingNow.data ?? []} isLoading={trendingNow.isLoading} slug="trending-today" />
         <ContinueWatchingRow />
-
-        <MovieRow
-          title="Trending Movies"
-          movies={dedupedMovies}
-          isLoading={trendingMovies.isLoading}
-          mediaType="movie"
-          slug="trending-movies"
-        />
-
-        <MovieRow
-          title="Trending Series"
-          movies={dedupedSeries}
-          isLoading={trendingSeries.isLoading}
-          mediaType="tv"
-          slug="trending-series"
-        />
-
-        <MovieRow
-          title="Anime"
-          movies={anime.data ?? []}
-          isLoading={anime.isLoading}
-          mediaType="tv"
-          slug="anime"
-        />
-
-        <MovieRow
-          title="Nollywood Hits"
-          movies={nollywood.data ?? []}
-          isLoading={nollywood.isLoading}
-          variant="landscape"
-        />
-
-        <MovieRow
-          title="Animation"
-          movies={animation.data ?? []}
-          isLoading={animation.isLoading}
-          slug="animation"
-        />
-
-        <MovieRow
-          title="Kids & Teens"
-          movies={kidsTeens.data ?? []}
-          isLoading={kidsTeens.isLoading}
-          mediaType="tv"
-          slug="kids-teens"
-        />
-
-        <MovieRow
-          title="Global Hits"
-          movies={globalHits.data ?? []}
-          isLoading={globalHits.isLoading}
-          mediaType="movie"
-          slug="global-hits"
-        />
-
-        <MovieRow
-          title="Korean Drama"
-          movies={koreanDrama.data ?? []}
-          isLoading={koreanDrama.isLoading}
-          mediaType="tv"
-          slug="korean-dramas"
-        />
-
-        <MovieRow
-          title="Japanese Shows"
-          movies={japaneseShows.data ?? []}
-          isLoading={japaneseShows.isLoading}
-          mediaType="tv"
-          slug="japanese-shows"
-        />
-
-        <MovieRow
-          title="Black Stories"
-          movies={blackStories.data ?? []}
-          isLoading={blackStories.isLoading}
-          mediaType="movie"
-          slug="black-stories"
-        />
-
-        <MovieRow
-          title="Action & Adventure"
-          movies={action.data ?? []}
-          isLoading={action.isLoading}
-          mediaType="movie"
-          slug="action"
-        />
-
-        <MovieRow
-          title="Romance & Drama"
-          movies={romanceDrama.data ?? []}
-          isLoading={romanceDrama.isLoading}
-          mediaType="movie"
-          slug="romance-drama"
-        />
-
-        <MovieRow
-          title="Comedy & Feel-Good"
-          movies={comedy.data ?? []}
-          isLoading={comedy.isLoading}
-          mediaType="movie"
-          slug="comedy"
-        />
-
-        <MovieRow
-          title="Horror"
-          movies={horror.data ?? []}
-          isLoading={horror.isLoading}
-          mediaType="movie"
-          slug="horror"
-        />
+        <MovieRow title="Trending Movies" movies={dedupedMovies} isLoading={trendingMovies.isLoading} mediaType="movie" slug="trending-movies" />
+        <MovieRow title="Trending Series" movies={dedupedSeries} isLoading={trendingSeries.isLoading} mediaType="tv" slug="trending-series" />
+        <MovieRow title="Anime" movies={anime.data ?? []} isLoading={anime.isLoading} mediaType="tv" slug="anime" />
+        <MovieRow title="Nollywood Hits" movies={nollywood.data ?? []} isLoading={nollywood.isLoading} variant="landscape" />
+        <MovieRow title="Animation" movies={animation.data ?? []} isLoading={animation.isLoading} slug="animation" />
+        <MovieRow title="Kids & Teens" movies={kidsTeens.data ?? []} isLoading={kidsTeens.isLoading} mediaType="tv" slug="kids-teens" />
+        <MovieRow title="Global Hits" movies={globalHits.data ?? []} isLoading={globalHits.isLoading} mediaType="movie" slug="global-hits" />
+        <MovieRow title="Korean Drama" movies={koreanDrama.data ?? []} isLoading={koreanDrama.isLoading} mediaType="tv" slug="korean-dramas" />
+        <MovieRow title="Japanese Shows" movies={japaneseShows.data ?? []} isLoading={japaneseShows.isLoading} mediaType="tv" slug="japanese-shows" />
+        <MovieRow title="Black Stories" movies={blackStories.data ?? []} isLoading={blackStories.isLoading} mediaType="movie" slug="black-stories" />
+        <MovieRow title="Action & Adventure" movies={action.data ?? []} isLoading={action.isLoading} mediaType="movie" slug="action" />
+        <MovieRow title="Romance & Drama" movies={romanceDrama.data ?? []} isLoading={romanceDrama.isLoading} mediaType="movie" slug="romance-drama" />
+        <MovieRow title="Comedy & Feel-Good" movies={comedy.data ?? []} isLoading={comedy.isLoading} mediaType="movie" slug="comedy" />
+        <MovieRow title="Horror" movies={horror.data ?? []} isLoading={horror.isLoading} mediaType="movie" slug="horror" />
       </div>
 
+      {/* ✅ SEO / OAuth SAFE FOOTER */}
       <footer className="px-4 pt-6 pb-6">
         <div className="flex items-center justify-center gap-4 text-[11px] text-muted-foreground/70">
-          <button
-            onClick={() => navigate("/privacy")}
+          <a
+            href="/privacy"
             className="opacity-70 transition-opacity hover:opacity-100"
           >
             Privacy
-          </button>
+          </a>
 
           <span className="opacity-40">•</span>
 
-          <button
-            onClick={() => navigate("/terms")}
+          <a
+            href="/terms"
             className="opacity-70 transition-opacity hover:opacity-100"
           >
             Terms
-          </button>
+          </a>
         </div>
 
         <p className="mt-3 text-center text-[10px] text-muted-foreground/40">
