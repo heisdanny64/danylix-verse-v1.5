@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import BottomNav from "@/components/BottomNav";
 import TopNav from "@/components/TopNav";
-import Index from "./pages/Index.tsx";
 import Terms from "./pages/Terms.tsx";
 import Privacy from "./pages/Privacy.tsx";
 import MaintenancePage from "./pages/MaintenancePage.tsx";
@@ -15,8 +14,8 @@ const queryClient = new QueryClient();
 
 const ChromeShell = ({ children }: { children: React.ReactNode }) => {
   const { pathname } = useLocation();
-  // Hide app chrome on the maintenance landing page
-  const hideChrome = pathname === "/";
+  // Hide app chrome on all maintenance-mode public pages
+  const hideChrome = ["/", "/privacy", "/terms"].includes(pathname);
   return (
     <>
       {!hideChrome && <TopNav />}
@@ -37,7 +36,6 @@ const App = () => (
             <Routes>
               {/* MAINTENANCE MODE — only "/", "/home", "/privacy", "/terms" are reachable. */}
               <Route path="/" element={<MaintenancePage />} />
-              <Route path="/home" element={<Index />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />
               {/* All other paths redirect to maintenance */}
