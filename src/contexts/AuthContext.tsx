@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select("*")
       .eq("id", userId)
       .single();
-    if (data) setProfile(data as Profile);
+    if (data) setProfile({ ...(data as any), avatar_url: (data as any).avatar_url ?? null } as Profile);
   }, []);
 
   const refreshProfile = useCallback(async () => {
