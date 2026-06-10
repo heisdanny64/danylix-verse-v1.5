@@ -42,22 +42,6 @@
   </head>
 
   <body>
-    <!-- SPLASH SCREEN -->
-    <div id="splash-screen">
-      <div class="splash-inner">
-        <img src="/splash.png" alt="D. Verse Splash" />
-
-        <h1 class="logo-text">
-          <span class="logo-d">D.</span><span class="logo-verse">Verse</span>
-        </h1>
-
-        <p class="tagline">
-          Your one stop destination for <span id="typing-text"></span>
-        </p>
-      </div>
-    </div>
-
-    <!-- React Root -->
     <div id="root"></div>
 
     <!-- React Entry -->
@@ -73,72 +57,6 @@
         .catch((err) => console.log("SW failed:", err));
     });
   }
-    </script>
-
-    <!-- Splash Logic (FIXED PROPERLY) -->
-    <script>
-      const words = ["Movies", "Series", "Anime"];
-      let wordIndex = 0;
-      let charIndex = 0;
-      let isDeleting = false;
-
-      let typingCompleted = false;
-      let minTimePassed = false;
-
-      const MIN_TIME = 3200;
-
-      function tryHideSplash() {
-        if (typingCompleted && minTimePassed) {
-          const splash = document.getElementById("splash-screen");
-          if (!splash) return;
-
-          splash.classList.add("fade-out");
-          setTimeout(() => splash.remove(), 600);
-        }
-      }
-
-      function typeEffect() {
-        const el = document.getElementById("typing-text");
-        if (!el) return;
-
-        const word = words[wordIndex];
-
-        if (isDeleting) {
-          charIndex--;
-        } else {
-          charIndex++;
-        }
-
-        el.textContent = word.substring(0, charIndex);
-
-        let speed = isDeleting ? 50 : 90;
-
-        if (!isDeleting && charIndex === word.length) {
-          speed = 1000;
-          isDeleting = true;
-
-          // mark completion after full cycle
-          if (wordIndex === words.length - 1) {
-            typingCompleted = true;
-            tryHideSplash();
-          }
-        } else if (isDeleting && charIndex === 0) {
-          isDeleting = false;
-          wordIndex = (wordIndex + 1) % words.length;
-          speed = 400;
-        }
-
-        setTimeout(typeEffect, speed);
-      }
-
-      document.addEventListener("DOMContentLoaded", () => {
-        typeEffect();
-
-        setTimeout(() => {
-          minTimePassed = true;
-          tryHideSplash();
-        }, MIN_TIME);
-      });
     </script>
   </body>
 </html>
