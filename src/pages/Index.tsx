@@ -21,42 +21,21 @@ import { mediaToTmdbCard } from "@/lib/media";
 const HomePage = () => {
   const navigate = useNavigate();
 
-  const hero = useQuery({
-    queryKey: ["trending-hero"],
-    queryFn: () => getTrending("all", "day"),
-  });
-
-  const trendingNow = useQuery({
-    queryKey: ["trending-now"],
-    queryFn: async () => sortByFreshness(await getTrending("all", "day")),
-  });
+  const hero = useQuery({ queryKey: ["trending-hero"], queryFn: () => getTrending("all", "day") });
+  const trendingNow = useQuery({ queryKey: ["trending-now"], queryFn: async () => sortByFreshness(await getTrending("all", "day")) });
 
   const trendingIds = useMemo(() => {
     const ids = new Set<number>();
-    trendingNow.data?.forEach((m) => ids.add(m.id));
+    trendingNow.data?.forEach(m => ids.add(m.id));
     return ids;
   }, [trendingNow.data]);
 
-  const trendingMovies = useQuery({
-    queryKey: ["trending-movies"],
-    queryFn: () => getTrendingMovies(),
-  });
+  const trendingMovies = useQuery({ queryKey: ["trending-movies"], queryFn: () => getTrendingMovies() });
+  const trendingSeries = useQuery({ queryKey: ["trending-series"], queryFn: () => getTrendingSeries() });
+  const dedupedMovies = useMemo(() => trendingMovies.data?.filter(m => !trendingIds.has(m.id)) ?? [], [trendingMovies.data, trendingIds]);
+  const dedupedSeries = useMemo(() => trendingSeries.data?.filter(m => !trendingIds.has(m.id)) ?? [], [trendingSeries.data, trendingIds]);
 
-  const trendingSeries = useQuery({
-    queryKey: ["trending-series"],
-    queryFn: () => getTrendingSeries(),
-  });
-
-  const dedupedMovies = useMemo(
-    () => trendingMovies.data?.filter((m) => !trendingIds.has(m.id)) ?? [],
-    [trendingMovies.data, trendingIds]
-  );
-
-  const dedupedSeries = useMemo(
-    () => trendingSeries.data?.filter((m) => !trendingIds.has(m.id)) ?? [],
-    [trendingSeries.data, trendingIds]
-  );
-
+  // Anime row: TMDB candidates + AniList verification (cached, async)
   const anime = useQuery({
     queryKey: ["anime-tmdb-verified"],
     queryFn: async () => {
@@ -66,65 +45,26 @@ const HomePage = () => {
     staleTime: 30 * 60 * 1000,
   });
 
+  // Nollywood row (Gifted)
   const nollywood = useQuery({
     queryKey: ["nollywood-gifted"],
-    queryFn: async () =>
-      (await getNollywoodFromGifted()).map(mediaToTmdbCard) as TMDBMovie[],
+    queryFn: async () => (await getNollywoodFromGifted()).map(mediaToTmdbCard) as TMDBMovie[],
     staleTime: 15 * 60 * 1000,
   });
 
-  const animation = useQuery({
-    queryKey: ["animation"],
-    queryFn: async () => excludeAnime(await getAnimation()),
-  });
-
-  const kidsTeens = useQuery({
-    queryKey: ["kids-teens"],
-    queryFn: async () => excludeAnime(await getKidsTeens()),
-  });
-
-  const globalHits = useQuery({
-    queryKey: ["global-hits"],
-    queryFn: async () => limitAnime(await getGlobalHits(), 0.2),
-  });
-
-  const koreanDrama = useQuery({
-    queryKey: ["korean-dramas"],
-    queryFn: () => getKoreanDrama(),
-  });
-
-  const japaneseShows = useQuery({
-    queryKey: ["japanese-shows"],
-    queryFn: async () => excludeAnime(await getJapaneseShows()),
-  });
-
-  const blackStories = useQuery({
-    queryKey: ["black-stories"],
-    queryFn: () => getBlackStories(),
-  });
-
-  const action = useQuery({
-    queryKey: ["action"],
-    queryFn: async () => excludeAnime(await getAction()),
-  });
-
-  const romanceDrama = useQuery({
-    queryKey: ["romance-drama"],
-    queryFn: async () => excludeAnime(await getRomanceDrama()),
-  });
-
-  const comedy = useQuery({
-    queryKey: ["comedy"],
-    queryFn: async () => excludeAnime(await getComedy()),
-  });
-
-  const horror = useQuery({
-    queryKey: ["horror"],
-    queryFn: async () => excludeAnime(await getHorror()),
-  });
+  const animation = useQuery({ queryKey: ["animation"], queryFn: async () => excludeAnime(await getAnimation()) });
+  const kidsTeens = useQuery({ queryKey: ["kids-teens"], queryFn: async () => excludeAnime(await getKidsTeens()) });
+  const globalHits = useQuery({ queryKey: ["global-hits"], queryFn: async () => limitAnime(await getGlobalHits(), 0.2) });
+  const koreanDrama = useQuery({ queryKey: ["korean-dramas"], queryFn: () => getKoreanDrama() });
+  const japaneseShows = useQuery({ queryKey: ["japanese-shows"], queryFn: async () => excludeAnime(await getJapaneseShows()) });
+  const blackStories = useQuery({ queryKey: ["black-stories"], queryFn: () => getBlackStories() });
+  const action = useQuery({ queryKey: ["action"], queryFn: async () => excludeAnime(await getAction()) });
+  const romanceDrama = useQuery({ queryKey: ["romance-drama"], queryFn: async () => excludeAnime(await getRomanceDrama()) });
+  const comedy = useQuery({ queryKey: ["comedy"], queryFn: async () => excludeAnime(await getComedy()) });
+  const horror = useQuery({ queryKey: ["horror"], queryFn: async () => excludeAnime(await getHorror()) });
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="pb-24 min-h-screen">
       <HeroBanner movies={hero.data ?? []} />
 
       <div className="px-4 my-4 md:hidden">
@@ -155,31 +95,6 @@ const HomePage = () => {
         <MovieRow title="Comedy & Feel-Good" movies={comedy.data ?? []} isLoading={comedy.isLoading} mediaType="movie" slug="comedy" />
         <MovieRow title="Horror" movies={horror.data ?? []} isLoading={horror.isLoading} mediaType="movie" slug="horror" />
       </div>
-
-      {/* ✅ SEO / OAuth SAFE FOOTER */}
-      <footer className="px-4 pt-6 pb-6">
-        <div className="flex items-center justify-center gap-4 text-[11px] text-muted-foreground/70">
-          <a
-            href="/privacy"
-            className="opacity-70 transition-opacity hover:opacity-100"
-          >
-            Privacy
-          </a>
-
-          <span className="opacity-40">•</span>
-
-          <a
-            href="/terms"
-            className="opacity-70 transition-opacity hover:opacity-100"
-          >
-            Terms
-          </a>
-        </div>
-
-        <p className="mt-3 text-center text-[10px] text-muted-foreground/40">
-          © 2026 D. Verse
-        </p>
-      </footer>
     </div>
   );
 };

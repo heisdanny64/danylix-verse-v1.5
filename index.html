@@ -7,8 +7,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 
     <!-- Title & SEO -->
-    <title>D. Verse — Under Maintenance</title>
-    <meta name="description" content="D. Verse is undergoing scheduled maintenance while we roll out new updates. We'll be back online shortly." />
+    <title>Danylix Verse — Your Movie Hub</title>
+    <meta name="description" content="Discover trending movies, series, and anime with D. Verse — a cinematic dark-themed movie discovery experience." />
     <meta name="author" content="Danylix" />
 
     <!-- Theme -->
@@ -29,19 +29,35 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
     <!-- Open Graph -->
-    <meta property="og:title" content="D. Verse — Under Maintenance" />
-    <meta property="og:description" content="D. Verse is undergoing scheduled maintenance. We'll be back online shortly." />
+    <meta property="og:title" content="D. Verse — Your Movie Hub" />
+    <meta property="og:description" content="Stream anime, movies and series in one universe." />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/og-image.png" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="D. Verse — Under Maintenance" />
-    <meta name="twitter:description" content="D. Verse is undergoing scheduled maintenance. We'll be back online shortly." />
+    <meta name="twitter:title" content="D. Verse — Your Movie Hub" />
+    <meta name="twitter:description" content="Stream anime, movies and series in one universe." />
     <meta name="twitter:image" content="/og-image.png" />
   </head>
 
   <body>
+    <!-- SPLASH SCREEN -->
+    <div id="splash-screen">
+      <div class="splash-inner">
+        <img src="/splash.png" alt="D. Verse Splash" />
+
+        <h1 class="logo-text">
+          <span class="logo-d">D.</span><span class="logo-verse">Verse</span>
+        </h1>
+
+        <p class="tagline">
+          Your one stop destination for <span id="typing-text"></span>
+        </p>
+      </div>
+    </div>
+
+    <!-- React Root -->
     <div id="root"></div>
 
     <!-- React Entry -->
@@ -57,6 +73,72 @@
         .catch((err) => console.log("SW failed:", err));
     });
   }
+    </script>
+
+    <!-- Splash Logic (FIXED PROPERLY) -->
+    <script>
+      const words = ["Movies", "Series", "Anime"];
+      let wordIndex = 0;
+      let charIndex = 0;
+      let isDeleting = false;
+
+      let typingCompleted = false;
+      let minTimePassed = false;
+
+      const MIN_TIME = 3200;
+
+      function tryHideSplash() {
+        if (typingCompleted && minTimePassed) {
+          const splash = document.getElementById("splash-screen");
+          if (!splash) return;
+
+          splash.classList.add("fade-out");
+          setTimeout(() => splash.remove(), 600);
+        }
+      }
+
+      function typeEffect() {
+        const el = document.getElementById("typing-text");
+        if (!el) return;
+
+        const word = words[wordIndex];
+
+        if (isDeleting) {
+          charIndex--;
+        } else {
+          charIndex++;
+        }
+
+        el.textContent = word.substring(0, charIndex);
+
+        let speed = isDeleting ? 50 : 90;
+
+        if (!isDeleting && charIndex === word.length) {
+          speed = 1000;
+          isDeleting = true;
+
+          // mark completion after full cycle
+          if (wordIndex === words.length - 1) {
+            typingCompleted = true;
+            tryHideSplash();
+          }
+        } else if (isDeleting && charIndex === 0) {
+          isDeleting = false;
+          wordIndex = (wordIndex + 1) % words.length;
+          speed = 400;
+        }
+
+        setTimeout(typeEffect, speed);
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        typeEffect();
+
+        setTimeout(() => {
+          minTimePassed = true;
+          tryHideSplash();
+        }, MIN_TIME);
+      });
     </script>
   </body>
 </html>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { TMDBMovie } from "@/lib/tmdb";
+import type { TMDBMovie } from "./tmdb";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   fetchCloudWatchlist,
@@ -12,7 +12,7 @@ import {
   type CloudWatchlistItem,
   type CloudContinueItem,
 } from "./supabase-library";
-import { posterUrl } from "@/lib/tmdb";
+import { posterUrl } from "./tmdb";
 
 const WATCHLIST_KEY = "dverse_watchlist";
 const CONTINUE_KEY = "dverse_continue_watching";
