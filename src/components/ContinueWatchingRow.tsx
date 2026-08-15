@@ -1,60 +1,56 @@
 import { Link } from "react-router-dom";
-import { Play } from "lucide-react";
-import { posterUrl, getDisplayInfo } from "@/lib/tmdb";
-import { useLibrary, type ContinueWatchingItem } from "@/lib/library";
+import { Play, X } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { isGiftedId } from "@/lib/slug";
+import { useLibrary } from "@/lib/library";
+import { buildPlayerHref } from "@/lib/slug";
+import { POSTER_FALLBACK } from "@/services/moviebox";
 
 const ContinueWatchingRow = () => {
-  const { continueWatching } = useLibrary();
+  const { continueWatching, removeFromContinue } = useLibrary();
 
   if (!continueWatching.length) return null;
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-bold text-foreground px-4">Continue Watching</h2>
-      <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
-        {continueWatching.map((item: ContinueWatchingItem) => {
-          const { title } = getDisplayInfo(item.movie);
-          const playType: "movie" | "tv" = item.mediaType === "movie" ? "movie" : "tv";
-          const link =
-            playType === "tv"
-              ? `/player/tv/${item.movie.id}?season=${item.season || 1}&episode=${item.episode || 1}`
-              : `/player/movie/${item.movie.id}`;
-
-          const isAnimeCard = (item.movie as any)._isAnimeCard === true;
-          const isGifted = isGiftedId(item.movie.id);
-          const raw = item.movie.backdrop_path || item.movie.poster_path || "";
-          const imgSrc = !raw
-            ? "/placeholder.svg"
-            : isAnimeCard || isGifted || /^https?:\/\//i.test(raw)
-              ? raw
-              : posterUrl(raw, "w300");
-
-          return (
-            <Link key={`${item.movie.id}-${item.mediaType}`} to={link} className="flex-shrink-0 w-[160px] group">
-              <div className="relative rounded-lg overflow-hidden bg-muted">
-                <div className="aspect-video">
-                  <img
-                    src={imgSrc}
-                    alt={title}
-                    className="w-full h-full object-cover"
-                  />
+      <h2 className="px-4 text-lg font-bold text-foreground">Continue Watching</h2>
+      <div className="scrollbar-hide flex gap-3 overflow-x-auto px-4 pb-2">
+        {continueWatching.map((item) => (
+          <div
+            key={item.id}
+            className="relative flex-shrink-0"
+            style={{ width: "clamp(220px, 60vw, 320px)" }}
+          >
+            <Link to={buildPlayerHref(item.type, item.id, item.se, item.ep)} className="group block">
+              <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
+                <img
+                  src={item.poster || POSTER_FALLBACK}
+                  alt={item.title}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-background/30 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Play className="h-8 w-8 fill-current text-foreground" />
                 </div>
-                <div className="absolute inset-0 flex items-center justify-center bg-background/30 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Play className="w-8 h-8 text-foreground fill-foreground" />
-                </div>
-                <Progress value={item.progress} className="absolute bottom-0 left-0 right-0 h-1 rounded-none" />
               </div>
-              <p className="text-xs font-medium text-foreground mt-1.5 truncate">{title}</p>
-              {(item.mediaType === "tv" || item.mediaType === "anime") && item.episode && (
-                <p className="text-xs text-muted-foreground">
-                  {item.mediaType === "tv" && item.season ? `S${item.season} ` : ""}E{item.episode}
-                </p>
-              )}
+              <div className="mt-2 space-y-1">
+                <p className="line-clamp-1 text-sm font-medium text-foreground">{item.title}</p>
+                {item.type !== "movie" && (
+                  <p className="text-xs text-muted-foreground">
+                    S{item.se} · E{item.ep}
+                  </p>
+                )}
+                <Progress value={item.progress} className="h-1" />
+              </div>
             </Link>
-          );
-        })}
+            <button
+              onClick={() => removeFromContinue(item.id)}
+              aria-label="Remove"
+              className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/70 text-foreground backdrop-blur"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
       </div>
     </section>
   );
