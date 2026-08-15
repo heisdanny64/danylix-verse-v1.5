@@ -26,6 +26,8 @@ Create `src/services/moviebox.ts` as the single API client:
 
 Remove `src/lib/tmdb.ts`, `anilist.ts`, `animeVerify.ts`, `tastedive.ts`, `contentMap.ts`, `media.ts`, `subtitles.ts`, `src/services/giftedApi.ts`, `src/data/movies.ts`, `src/pages/RecommendationsPage.tsx`, `src/pages/CategoryPage.tsx`, and the `supabase/functions/gifted-proxy` edge function. Drop their routes from `App.tsx` and clean every import.
 
+This also clears the two orphaned duplicates currently breaking the typecheck — `src/components/library.ts` and `src/components/supabase-library.ts`, which import a `./tmdb` that does not exist and are imported by nothing.
+
 ### 3. Homepage
 
 - `GET /home/rows` once, filter, then one `GET /home/subjects?opId=` query per surviving row (React Query, staggered, cached ~15 min).
