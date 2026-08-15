@@ -1,172 +1,60 @@
-## Scope
+# Rebuild D. Verse on the MovieBox provider
 
-Refinement pass on an existing app. No rewrites of streaming logic, TMDB layer, or Supabase schema. Each item is fully implemented end-to-end — no placeholders.
+Rip out every legacy content provider (TMDB, AniList, TasteDive, Gifted) and rebuild the app on top of the Spün MovieBox worker at `https://moviebox.byspun.xyz`.
 
----
+## What changes for you
 
-## 1. Navigation & Layout
+- Homepage is fully backend-driven: rows come from the API, not from code.
+- The `Banner_Africa` row becomes the hero carousel; every other allowed row becomes a homepage carousel in the order the API returns.
+- Music, sports, fights, wrestling, comedy-skit, VIP-upsell and other junk rows are filtered out automatically by keyword, so new junk rows from the API stay hidden without a code change.
+- Shorts stay in (a dedicated shorts player comes later).
+- Discover page is gone. Bottom nav becomes a floating translucent pill with Home, Library, You.
+- Library, continue-watching and profile run on local storage for now — no login wall — until the new database is chosen.
 
-**`src/pages/Index.tsx`**
-- Remove the `<header className="absolute …">` block. The `D.Verse` wordmark already lives in `TopNav` (desktop) and we'll show a thin mobile header in normal flow above the hero on small screens (no absolute positioning).
-- Wrap page content so hero comes after nav in document order.
+## Build steps
 
-**`src/components/TopNav.tsx`**
-- Logo: replace `D.VERSE` text with `D. Verse` exactly. Drop `tracking-tight` uppercase styling and ensure no `uppercase` Tailwind class is applied.
-- Already `sticky top-0 z-50`. Audit ancestors (`#root`, `body`, route wrappers) for `overflow-hidden` / `transform` that breaks sticky — none currently set, but add `overflow-x-clip` instead of `hidden` on any wrapper that needs it.
-- Add a mobile variant: a slim sticky bar (logo + search icon + profile) shown `md:hidden` so the wordmark sits above the hero on phones too. Keeps single source of truth for nav.
+### 1. New provider layer
 
-**Stacking**
-- Hero `z-0`, TopNav `z-50`. Index page becomes: `<TopNav />` (already mounted in `App.tsx`) → `<HeroBanner />` → rows. Remove `absolute` header so hero starts below nav naturally.
+Create `src/services/moviebox.ts` as the single API client:
 
----
+- Base URL and secret from `VITE_MOVIEBOX_API_URL` / `VITE_MOVIEBOX_SECRET` (`.env`), sent as `X-Worker-Secret` on every call.
+- Typed wrappers: `searchSubjects`, `getInfo`, `getSeason`, `getStream(subjectId, se, ep)`, `getStreamAll`, `getDownload`, `getHomeRows`, `getHomeSubjects(opId)`.
+- Shared `MovieBoxSubject` type (`subjectId`, `subjectType`, `type`, `title`, `poster`, `rating`, `genre`, `releaseDate`, `hasResource`).
+- Errors surface as thrown `Error` so React Query retries/handles them.
 
-## 2. Horizontal Row Scroll Buttons (Desktop only)
+### 2. Delete legacy providers
 
-**`src/components/MovieRow.tsx`**
-- Add a scroll container ref. Render two `<button>` overlays (`ChevronLeft` / `ChevronRight`) absolutely positioned on the row's left/right edges, only visible at `md:` and up (`hidden md:flex`).
-- Click handler: `el.scrollBy({ left: ±el.clientWidth * 0.85, behavior: "smooth" })`.
-- Track scrollLeft + scrollWidth via a `scroll` listener; hide left button at `scrollLeft<=0`, hide right at end. Use opacity transition so they fade.
-- Keep `scrollbar-hide`. No change to mobile touch behavior.
+Remove `src/lib/tmdb.ts`, `anilist.ts`, `animeVerify.ts`, `tastedive.ts`, `contentMap.ts`, `media.ts`, `subtitles.ts`, `src/services/giftedApi.ts`, `src/data/movies.ts`, `src/pages/RecommendationsPage.tsx`, `src/pages/CategoryPage.tsx`, and the `supabase/functions/gifted-proxy` edge function. Drop their routes from `App.tsx` and clean every import.
 
----
+This also clears the two orphaned duplicates currently breaking the typecheck — `src/components/library.ts` and `src/components/supabase-library.ts`, which import a `./tmdb` that does not exist and are imported by nothing.
 
-## 3. Full PWA
+### 3. Homepage
 
-**`index.html`**
-- Viewport: `width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover` (disables pinch + double-tap zoom).
-- Add `<meta name="mobile-web-app-capable" content="yes" />` alongside the existing Apple equivalent.
+- `GET /home/rows` once, filter, then one `GET /home/subjects?opId=` query per surviving row (React Query, staggered, cached ~15 min).
+- Filter rules applied to row titles (case/emoji-insensitive): drop anything matching music, song, singer, sport, football, FIFA, World Cup, WWE, wrestling, fight, fighter, skit, comedy skit, club & competition, learning/learn and grow, TV channels, VIP, Bet+, Categories, Coming Soon, and generic placeholder rows.
+- `Banner_Africa` never renders as a row — it feeds `HeroBanner`.
+- Rows with fewer than 3 subjects are skipped.
+- Row card orientation stays poster-style; shorts rows use the same card for now.
 
-**`public/manifest.json`**
-- Already has `display: "standalone"`, theme/bg color, icons. Add: `"display_override": ["fullscreen", "standalone"]`, `"id": "/"`, `"prefer_related_applications": false`.
-- Verify icon files exist at the referenced paths (`favicon-192x192.png`, `favicon-512x512.png`); if not, point to existing `favicon-192.png`/`favicon-32.png` in `public/`.
+### 4. Details, search, player
 
-**Safe-area / notch**
-- `src/index.css`: add CSS env-var helpers
-  ```css
-  body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
-  .safe-x { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
-  ```
-- Bottom nav: add `pb-[env(safe-area-inset-bottom)]`. Top nav: `pt-[env(safe-area-inset-top)]`.
+- `DetailsPage`: `/info/:subjectId` for metadata + staff (cast row from `staff`), `/season/:subjectId` for the episode list when `type` is `tv` or `shorts`.
+- `SearchPage`: `POST /search` with debounce and paging via `pager.hasMore`.
+- `Player`: fetch `/stream/:subjectId?se=&ep=` fresh at playback, build the quality menu from the returned array (never cache signed URLs). Movies use `se=0&ep=0`, TV/shorts use real season/episode.
+- `DownloadModal`: `/download/:subjectId`, grouped season → episode → qualities.
+- Routing keys move from TMDB numeric ids to `subjectId`; slug routes become `/movie/:subjectId`, `/tv/:subjectId`, `/shorts/:subjectId` with old paths redirecting home.
 
-**Service worker**
-- Per Lovable PWA guidance: do **not** add `vite-plugin-pwa` (preview iframe issues). Manifest-only setup gives true installability + standalone launch on iOS/Android, which covers the user's stated goals (full-screen, no zoom, safe area, installable). No offline caching is in scope.
+### 5. Navigation and layout
 
----
+- `BottomNav`: three tabs (Home, Library, You), floating pill — inset from the screen edges, fully rounded, translucent background with backdrop blur, subtle border and shadow, respects safe-area inset.
+- Page bottom padding adjusted for the floating bar.
 
-## 4. Authentication UI
+### 6. Local persistence
 
-**`src/pages/AuthPage.tsx`** — restructure to match the Crunchyroll-style reference (large centered title, underline-style inputs, single bold pill button, secondary tab link below).
+`src/lib/library.ts` becomes the single local-storage store for watchlist, continue-watching and player prefs, keyed by `subjectId`. `supabase-library.ts` and Supabase reads/writes are removed from the UI path; `AuthContext` degrades to a no-op stub so profile and library render without a session.
 
-- Login form: **Email or Username** + **Password** + `LOG IN` button. Below: `FORGOT PASSWORD?` and `CREATE ACCOUNT` links (the latter switches tab).
-- Signup form: **Username** + **Email** + **Password** + `CREATE ACCOUNT` button. Below: `Already have an account? LOG IN`.
-- Drop the `name` and `confirmPassword` fields per spec. Update `signUp(username, email, password)` accordingly in `AuthContext`.
-- Validation: username regex (existing), email format, password ≥6. Inline error component preserved.
-- Style: dark bg, large title, input with bottom border + focus highlight, full-width pill button.
+## Technical notes
 
-**`src/contexts/AuthContext.tsx`**
-- Adjust `signUp` signature; profile row: set `name = username` (or omit) so DB stays satisfied without breaking existing schema. No migration needed.
-
----
-
-## 5. Profile Page
-
-**`src/pages/ProfilePage.tsx`**
-- Replace stub `onClick={() => {}}` rows with real navigation.
-- Add new routes in `App.tsx`: `/about`, `/terms`, `/privacy`, `/settings`.
-
-**New static pages** (`src/pages/About.tsx`, `Terms.tsx`, `Privacy.tsx`)
-- Standard layout: back button header + scrollable prose. Realistic copy generated for each (mission/about, ToS sections: acceptance, accounts, content, IP, termination, disclaimer, contact; Privacy: data collected, usage, cookies, third-parties, rights, contact).
-
-**New `src/pages/SettingsPage.tsx`** — "General Settings" route
-- Three controls:
-  - **Preferred video quality** — Auto / 1080p / 720p / 480p / 360p (Select).
-  - **Preferred subtitle language** — sourced from a fixed list (English, Spanish, French, German, Japanese, Portuguese, Arabic, Hindi, …) (Select).
-  - **Subtitle size** — Small / Medium / Large (segmented buttons).
-- Persist to `localStorage` key `dverse_player_prefs` (JSON). Also mirror to Supabase `user_preferences` if user logged in (new helper, optional — local first).
-
-**New hook `src/hooks/usePlayerPrefs.ts`**
-- `usePlayerPrefs()` returns `{ quality, subtitleLang, subtitleSize, set… }` reading from localStorage with defaults (`Auto`, `English`, `small`).
-
-**`src/pages/Player.tsx`** wiring
-- On mount, read prefs:
-  - When sources resolve, pre-select the best matching quality (closest to pref ≤ pref).
-  - When subtitles list resolves, pre-select track matching pref language (case-insensitive).
-  - Apply subtitle size by writing to a CSS variable on the player root: `--cue-scale: 0.9 | 1.0 | 1.25` and styling `::cue` / the custom subtitle overlay font-size accordingly.
-
----
-
-## 6. Details Page — Slug URLs + Share
-
-**Slug routing**
-- Add helper `src/lib/slug.ts`: `toSlug(title)` → kebab; `parseSlug("the-matrix-603")` → `{ slug, id: "603" }` (id = trailing numeric/string after last `-`).
-- New route in `App.tsx`: `<Route path="/:type/:slug" element={<DetailsPage />} />` accepting types `movie | tv | anime`. Keep existing `/details/:type/:id` as a permanent redirect to the slug URL once title is known.
-- `MovieCard` link generation: build `/${type}/${toSlug(title)}-${id}` and append `?source=gifted` only when needed (kept in query string, NOT path, so source stays internal — but to fully hide source we can store a session map id→source in `sessionStorage` keyed by id; if absent, source defaults to TMDB; gifted ids are non-numeric so detection is implicit). Final approach: detect `isNaN(id)` ⇒ gifted; otherwise TMDB. **No `?source=` in the URL.**
-- `DetailsPage` + `Player`: derive `source` from `Number.isFinite(Number(id)) ? "tmdb" : "gifted"`. Removes the leak.
-
-**Share button**
-- New `src/components/ShareButton.tsx`. On click:
-  ```ts
-  const url = `${window.location.origin}/${type}/${slug}-${id}`;
-  if (navigator.share) await navigator.share({ title, url, text: overview });
-  else { await navigator.clipboard.writeText(url); toast("Link copied"); }
-  ```
-- Render in `DetailsPage` action bar next to Watchlist/Download. Works for all content types and never includes source info.
-
----
-
-## 7. Continue Watching — Gifted Support
-
-**`src/lib/library.ts`**
-- `ContinueWatchingItem.movie.id` is typed `number`; gifted ids are strings. Change the persisted shape to allow `id: string | number`. Update `cloudToLocalContinue` to keep raw `content_id` string instead of coercing to `0`.
-- `updateProgress` already accepts `TMDBMovie`; relax internal typing to accept gifted-shaped items (id string, poster absolute URL).
-- `removeFromContinue` keyed on `id + mediaType` — change comparator to string-equality on `String(id)`.
-
-**`src/lib/supabase-library.ts`**
-- `content_id` column is already `text` (per existing usage). Confirm no numeric cast on insert; pass `String(id)` consistently.
-
-**`src/pages/Player.tsx`**
-- Where it calls `updateProgress(movie, mediaType, …)`, pass the gifted-derived movie object when `isGiftedSource` (build `{ id: stringId, title, poster_path: absoluteUrl, … }` from `giftedDetail`). Keep TMDB path unchanged.
-
-**`src/components/ContinueWatchingRow.tsx` / `MovieCard`**
-- When item id is non-numeric, route resume click to `/${type}/${slug}-${id}` (gifted) — slug system makes this transparent. Resume uses persisted `season/episode/currentTime`.
-
----
-
-## 8. Source Abstraction Audit
-
-- Remove the `?source=gifted` query param everywhere it's currently emitted (MovieCard, DetailsPage Watch button). Replace with id-based detection (gifted ids are non-numeric strings).
-- Remove the `"gifted"` source label or any UI text that exposes provider. Verify badges in `MovieCard`, `DetailsPage`, search filter chips don't mention gifted (search chips already trimmed per prior plan; double-check).
-
----
-
-## Files Touched
-
-```text
-index.html                                  - viewport zoom-lock
-public/manifest.json                        - id, display_override, fix icon paths
-src/index.css                               - safe-area helpers, ::cue size vars
-src/App.tsx                                 - new routes (about/terms/privacy/settings, slug)
-src/components/TopNav.tsx                   - logo casing, mobile slim variant
-src/components/BottomNav.tsx                - safe-area padding
-src/components/MovieRow.tsx                 - desktop scroll buttons
-src/components/MovieCard.tsx                - slug URL builder, no ?source
-src/components/HeroBanner.tsx               - slug URL for play/details
-src/components/ContinueWatchingRow.tsx      - gifted-aware resume routes
-src/components/ShareButton.tsx              - NEW
-src/contexts/AuthContext.tsx                - signUp signature (drop name)
-src/hooks/usePlayerPrefs.ts                 - NEW
-src/lib/slug.ts                             - NEW
-src/lib/library.ts                          - string ids, gifted progress
-src/lib/supabase-library.ts                 - ensure string content_id
-src/pages/Index.tsx                         - drop absolute header
-src/pages/AuthPage.tsx                      - redesigned per reference
-src/pages/ProfilePage.tsx                   - wire row navigation
-src/pages/SettingsPage.tsx                  - NEW
-src/pages/About.tsx                         - NEW
-src/pages/Terms.tsx                         - NEW
-src/pages/Privacy.tsx                       - NEW
-src/pages/DetailsPage.tsx                   - id-based source detect, share btn, slug
-src/pages/Player.tsx                        - id-based source, prefs wiring, gifted CW
-```
-
-No changes to: streaming/HLS logic, TMDB metadata fetchers, Supabase schema, downloads.
+- Secret ships in the client bundle for now (worker allows `Access-Control-Allow-Origin: *`); it moves behind a server proxy when the new backend lands.
+- No hardcoded `opId`s anywhere — they are discovered per session.
+- Existing Supabase migration files and client stay on disk untouched, just unused, so the future backend swap is a clean follow-up.
