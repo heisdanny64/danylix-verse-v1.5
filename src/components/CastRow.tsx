@@ -1,69 +1,37 @@
-import { useQuery } from "@tanstack/react-query";
-import { getCredits, posterUrl } from "@/lib/tmdb";
-import { Skeleton } from "@/components/ui/skeleton";
-
 export interface CastRowItem {
-  id: number | string;
   name: string;
-  character?: string;
-  profile_path?: string | null;
+  role?: string;
+  avatar?: string | null;
 }
 
-interface CastRowProps {
-  id?: number;
-  mediaType?: "movie" | "tv";
-  cast?: CastRowItem[] | null; // null = explicitly no cast; undefined = not yet loaded
-  externalLoading?: boolean;   // true while parent is still fetching Gifted data
-}
+const initials = (name: string) =>
+  name
+    .split(" ")
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
-const CastRow = ({ id, mediaType, cast, externalLoading = false }: CastRowProps) => {
-  const useExternal = Array.isArray(cast);
-  const { data: fetched, isLoading: tmdbLoading } = useQuery({
-    queryKey: ["credits", mediaType, id],
-    queryFn: () => getCredits(id!, mediaType!),
-    enabled: !useExternal && !!id && !!mediaType,
-    staleTime: 60 * 60 * 1000,
-  });
-
-  const isLoading = externalLoading || (!useExternal && tmdbLoading);
-  const data: CastRowItem[] | undefined = useExternal ? cast! : (fetched as any);
-
-  if (!isLoading && (!data || data.length === 0)) return null;
+const CastRow = ({ cast }: { cast: CastRowItem[] }) => {
+  if (!cast?.length) return null;
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-bold text-foreground px-4">Cast & Characters</h2>
-      <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
-        {isLoading
-          ? Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-[88px]">
-                <Skeleton className="h-[88px] w-[88px] rounded-full" />
-                <Skeleton className="h-3 w-16 mt-2" />
-                <Skeleton className="h-3 w-12 mt-1" />
-              </div>
-            ))
-          : data!.map((c, i) => (
-              <div key={String(c.id ?? i)} className="flex-shrink-0 w-[88px] text-center">
-                <div className="h-[88px] w-[88px] rounded-full overflow-hidden bg-muted mx-auto">
-                  {c.profile_path ? (
-                    <img
-                      src={/^https?:\/\//i.test(c.profile_path) ? c.profile_path : posterUrl(c.profile_path, "w185")}
-                      alt={c.name}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
-                      {c.name?.[0] || "?"}
-                    </div>
-                  )}
-                </div>
-                <p className="text-xs font-medium text-foreground mt-2 line-clamp-2">{c.name}</p>
-                {c.character && (
-                  <p className="text-[11px] text-muted-foreground line-clamp-2">{c.character}</p>
-                )}
-              </div>
-            ))}
+      <h2 className="text-lg font-bold text-foreground">Cast & Crew</h2>
+      <div className="scrollbar-hide flex gap-4 overflow-x-auto pb-2">
+        {cast.map((p, i) => (
+          <div key={`${p.name}-${i}`} className="w-20 flex-shrink-0 text-center">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-semibold text-muted-foreground">
+              {p.avatar ? (
+                <img src={p.avatar} alt={p.name} className="h-full w-full object-cover" loading="lazy" />
+              ) : (
+                initials(p.name)
+              )}
+            </div>
+            <p className="mt-1.5 line-clamp-2 text-xs font-medium text-foreground">{p.name}</p>
+            {p.role && <p className="line-clamp-1 text-[10px] text-muted-foreground">{p.role}</p>}
+          </div>
+        ))}
       </div>
     </section>
   );

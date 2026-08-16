@@ -1,170 +1,79 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { searchTMDB } from "@/lib/tmdb";
-import { searchGifted } from "@/services/giftedApi";
-import { tmdbToMediaItem, giftedToMediaItem, mediaToTmdbCard, normalizeTitle, type MediaItem } from "@/lib/media";
+import { ArrowLeft, Loader2, Search as SearchIcon } from "lucide-react";
 import MovieCard from "@/components/MovieCard";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-
-type FilterType = "all" | "movie" | "tv";
-
-const SEASON_NOISE = /\b(s\d+(\s*-\s*s?\d+)?|season\s?\d+)\b/i;
-const VARIANT_TOKEN = /\b(english|dub|dubbed|sub|subbed|raw|japanese)\b/i;
-
-function mergeResults(tmdb: MediaItem[], gifted: MediaItem[]): MediaItem[] {
-  const tmdbKeys = new Set(tmdb.map((t) => normalizeTitle(t.title)));
-
-  // Strip noisy season-fragment Gifted titles, then dedup against TMDB unless variant.
-  const cleaned = gifted
-    .filter((g) => g.title && !SEASON_NOISE.test(g.title))
-    .filter((g) => {
-      const isVariant = VARIANT_TOKEN.test(g.title);
-      if (isVariant) return true;
-      // No variant token → drop if TMDB already has the same base title.
-      return !tmdbKeys.has(normalizeTitle(g.title));
-    });
-
-  // Interleave so results read mixed (TMDB + Gifted variants intermixed).
-  const out: MediaItem[] = [];
-  const max = Math.max(tmdb.length, cleaned.length);
-  for (let i = 0; i < max; i++) {
-    if (i < tmdb.length) out.push(tmdb[i]);
-    if (i < cleaned.length) out.push(cleaned[i]);
-  }
-  return out;
-}
+import { searchSubjects } from "@/services/moviebox";
 
 const SearchPage = () => {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const initialQ = searchParams.get("q") || "";
-  const [query, setQuery] = useState(initialQ);
-  const [filter, setFilter] = useState<FilterType>("all");
-  const { user } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const initial = params.get("q") ?? "";
+  const [term, setTerm] = useState(initial);
+  const [query, setQuery] = useState(initial);
+  const [page, setPage] = useState(1);
 
-  // Sync query → URL (debounced)
   useEffect(() => {
-    const t = window.setTimeout(() => {
-      const next = new URLSearchParams(searchParams);
-      if (query.trim()) next.set("q", query.trim());
-      else next.delete("q");
-      setSearchParams(next, { replace: true });
-    }, 300);
-    return () => window.clearTimeout(t);
-  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+    const t = setTimeout(() => {
+      setQuery(term.trim());
+      setPage(1);
+      setParams(term.trim() ? { q: term.trim() } : {}, { replace: true });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [term, setParams]);
 
-  // Persist meaningful searches
-  useEffect(() => {
-    if (!user?.id) return;
-    const trimmed = query.trim();
-    if (trimmed.length < 3) return;
-    const t = window.setTimeout(() => {
-      void supabase.from("search_history").insert({ user_id: user.id, query: trimmed });
-    }, 1500);
-    return () => window.clearTimeout(t);
-  }, [query, user?.id]);
-
-  const { data: tmdbResults, isLoading: tmdbLoading } = useQuery({
-    queryKey: ["search-tmdb", query],
-    queryFn: () => searchTMDB(query),
+  const { data, isFetching } = useQuery({
+    queryKey: ["mb-search", query, page],
+    queryFn: () => searchSubjects(query, page),
     enabled: query.length > 1,
-    staleTime: 1000 * 60,
+    staleTime: 5 * 60 * 1000,
   });
 
-  const { data: giftedResults, isLoading: giftedLoading } = useQuery({
-    queryKey: ["search-gifted", query],
-    queryFn: () => searchGifted(query),
-    enabled: query.length > 1,
-    staleTime: 1000 * 60,
-  });
-
-  const isLoading = tmdbLoading || giftedLoading;
-
-  // Build TMDB and Gifted lists independently — never overwrite each other.
-  const tmdbItems: MediaItem[] = (tmdbResults || [])
-    .filter((r) => r.media_type === "movie" || r.media_type === "tv")
-    .map((r) => tmdbToMediaItem(r as any, r.media_type as "movie" | "tv"));
-  const giftedItems: MediaItem[] = (giftedResults || []).map(giftedToMediaItem);
-  const merged = mergeResults(tmdbItems, giftedItems);
-
-  const filtered = merged.filter((m) => (filter === "all" ? true : m.type === filter));
-
-  const filters: { label: string; value: FilterType }[] = [
-    { label: "All", value: "all" },
-    { label: "Movies", value: "movie" },
-    { label: "TV", value: "tv" },
-  ];
+  const items = data?.items ?? [];
 
   return (
-    <div className="min-h-screen pb-8">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-md px-4 pt-4 pb-3 space-y-3">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1 flex items-center gap-2 rounded-lg bg-card px-3 py-2.5">
-            <Search className="w-4 h-4 text-primary flex-shrink-0" />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search movies, series, or anime…"
-              className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
-            />
-          </div>
+    <div className="min-h-screen pb-28">
+      <div className="sticky top-0 z-40 flex items-center gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+        <button
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/"))}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-foreground"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <div className="flex flex-1 items-center gap-2 rounded-full bg-card px-4 py-2">
+          <SearchIcon className="h-4 w-4 text-muted-foreground" />
+          <input
+            autoFocus
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder="Search movies, series or shorts…"
+            className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          {isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
         </div>
-
-        {query.length > 1 && (
-          <div className="flex gap-2">
-            {filters.map((f) => (
-              <button
-                key={f.value}
-                onClick={() => setFilter(f.value)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  filter === f.value
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-accent"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      <div className="px-4 mt-4">
-        {query.length <= 1 && (
-          <p className="text-center text-muted-foreground text-sm mt-20">
-            Start typing to search movies, series, and anime
+      <div className="px-4 py-4">
+        {query.length > 1 && !isFetching && items.length === 0 && (
+          <p className="py-16 text-center text-sm text-muted-foreground">
+            No results for “{query}”.
           </p>
         )}
-        {query.length > 1 && isLoading && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="aspect-[2/3] rounded-lg" />
-            ))}
-          </div>
-        )}
-        {query.length > 1 && !isLoading && filtered.length === 0 && (
-          <p className="text-center text-muted-foreground text-sm mt-20">
-            No results found for "{query}"
-          </p>
-        )}
-        {filtered.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {filtered.map((item) => (
-              <MovieCard
-                key={`${item.source}-${item.type}-${item.id}`}
-                movie={mediaToTmdbCard(item)}
-                mediaType={item.type}
-                compact
-              />
-            ))}
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+          {items.map((s) => (
+            <MovieCard key={s.subjectId} subject={s} compact />
+          ))}
+        </div>
+
+        {data?.pager?.hasMore && (
+          <div className="mt-6 flex justify-center">
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded-full bg-card px-5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              Load more
+            </button>
           </div>
         )}
       </div>

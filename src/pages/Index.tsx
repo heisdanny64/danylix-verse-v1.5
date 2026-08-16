@@ -1,99 +1,80 @@
-import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import MovieRow from "@/components/MovieRow";
 import HeroBanner from "@/components/HeroBanner";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 import {
-  getTrending, getTrendingMovies, getTrendingSeries,
-  getAnimation, getKidsTeens, getGlobalHits,
-  getKoreanDrama, getJapaneseShows, getBlackStories,
-  getAction, getRomanceDrama, getComedy, getHorror,
-  getTMDBAnimeCandidates,
-  sortByFreshness, excludeAnime, limitAnime,
-  type TMDBMovie,
-} from "@/lib/tmdb";
-import { filterVerifiedAnime } from "@/lib/animeVerify";
-import { getNollywoodFromGifted } from "@/services/giftedApi";
-import { mediaToTmdbCard } from "@/lib/media";
+  getHomeRows,
+  getHomeSubjects,
+  isAllowedRow,
+  isHeroRow,
+  type MovieBoxRowMeta,
+} from "@/services/moviebox";
+
+const STALE = 15 * 60 * 1000;
 
 const HomePage = () => {
   const navigate = useNavigate();
 
-  const hero = useQuery({ queryKey: ["trending-hero"], queryFn: () => getTrending("all", "day") });
-  const trendingNow = useQuery({ queryKey: ["trending-now"], queryFn: async () => sortByFreshness(await getTrending("all", "day")) });
-
-  const trendingIds = useMemo(() => {
-    const ids = new Set<number>();
-    trendingNow.data?.forEach(m => ids.add(m.id));
-    return ids;
-  }, [trendingNow.data]);
-
-  const trendingMovies = useQuery({ queryKey: ["trending-movies"], queryFn: () => getTrendingMovies() });
-  const trendingSeries = useQuery({ queryKey: ["trending-series"], queryFn: () => getTrendingSeries() });
-  const dedupedMovies = useMemo(() => trendingMovies.data?.filter(m => !trendingIds.has(m.id)) ?? [], [trendingMovies.data, trendingIds]);
-  const dedupedSeries = useMemo(() => trendingSeries.data?.filter(m => !trendingIds.has(m.id)) ?? [], [trendingSeries.data, trendingIds]);
-
-  // Anime row: TMDB candidates + AniList verification (cached, async)
-  const anime = useQuery({
-    queryKey: ["anime-tmdb-verified"],
-    queryFn: async () => {
-      const candidates = await getTMDBAnimeCandidates();
-      return filterVerifiedAnime(candidates);
-    },
-    staleTime: 30 * 60 * 1000,
+  const rowsQuery = useQuery({
+    queryKey: ["home-rows"],
+    queryFn: getHomeRows,
+    staleTime: STALE,
   });
 
-  // Nollywood row (Gifted)
-  const nollywood = useQuery({
-    queryKey: ["nollywood-gifted"],
-    queryFn: async () => (await getNollywoodFromGifted()).map(mediaToTmdbCard) as TMDBMovie[],
-    staleTime: 15 * 60 * 1000,
+  const allRows: MovieBoxRowMeta[] = rowsQuery.data?.rows ?? [];
+  const heroRow = allRows.find((r) => isHeroRow(r.title));
+  const contentRows = allRows.filter((r) => isAllowedRow(r.title));
+
+  const heroQuery = useQuery({
+    queryKey: ["home-subjects", heroRow?.opId],
+    queryFn: () => getHomeSubjects(heroRow!.opId),
+    enabled: !!heroRow,
+    staleTime: STALE,
   });
 
-  const animation = useQuery({ queryKey: ["animation"], queryFn: async () => excludeAnime(await getAnimation()) });
-  const kidsTeens = useQuery({ queryKey: ["kids-teens"], queryFn: async () => excludeAnime(await getKidsTeens()) });
-  const globalHits = useQuery({ queryKey: ["global-hits"], queryFn: async () => limitAnime(await getGlobalHits(), 0.2) });
-  const koreanDrama = useQuery({ queryKey: ["korean-dramas"], queryFn: () => getKoreanDrama() });
-  const japaneseShows = useQuery({ queryKey: ["japanese-shows"], queryFn: async () => excludeAnime(await getJapaneseShows()) });
-  const blackStories = useQuery({ queryKey: ["black-stories"], queryFn: () => getBlackStories() });
-  const action = useQuery({ queryKey: ["action"], queryFn: async () => excludeAnime(await getAction()) });
-  const romanceDrama = useQuery({ queryKey: ["romance-drama"], queryFn: async () => excludeAnime(await getRomanceDrama()) });
-  const comedy = useQuery({ queryKey: ["comedy"], queryFn: async () => excludeAnime(await getComedy()) });
-  const horror = useQuery({ queryKey: ["horror"], queryFn: async () => excludeAnime(await getHorror()) });
+  const rowQueries = useQueries({
+    queries: contentRows.map((row) => ({
+      queryKey: ["home-subjects", row.opId],
+      queryFn: () => getHomeSubjects(row.opId),
+      staleTime: STALE,
+    })),
+  });
 
   return (
-    <div className="pb-24 min-h-screen">
-      <HeroBanner movies={hero.data ?? []} />
+    <div className="min-h-screen pb-28">
+      <HeroBanner subjects={heroQuery.data?.subjects ?? []} isLoading={rowsQuery.isLoading || heroQuery.isLoading} />
 
-      <div className="px-4 my-4 md:hidden">
+      <div className="my-4 px-4 md:hidden">
         <button
           onClick={() => navigate("/search")}
-          className="flex w-full items-center gap-3 rounded-lg bg-card px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted"
+          className="flex w-full items-center gap-3 rounded-full bg-card px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted"
         >
-          <Search className="w-4 h-4 text-primary" />
-          Search movies, series, or anime…
+          <Search className="h-4 w-4 text-primary" />
+          Search movies, series or shorts…
         </button>
       </div>
 
       <div className="space-y-6">
-        <MovieRow title="Trending Now" movies={trendingNow.data ?? []} isLoading={trendingNow.isLoading} slug="trending-today" />
         <ContinueWatchingRow />
-        <MovieRow title="Trending Movies" movies={dedupedMovies} isLoading={trendingMovies.isLoading} mediaType="movie" slug="trending-movies" />
-        <MovieRow title="Trending Series" movies={dedupedSeries} isLoading={trendingSeries.isLoading} mediaType="tv" slug="trending-series" />
-        <MovieRow title="Anime" movies={anime.data ?? []} isLoading={anime.isLoading} mediaType="tv" slug="anime" />
-        <MovieRow title="Nollywood Hits" movies={nollywood.data ?? []} isLoading={nollywood.isLoading} variant="landscape" />
-        <MovieRow title="Animation" movies={animation.data ?? []} isLoading={animation.isLoading} slug="animation" />
-        <MovieRow title="Kids & Teens" movies={kidsTeens.data ?? []} isLoading={kidsTeens.isLoading} mediaType="tv" slug="kids-teens" />
-        <MovieRow title="Global Hits" movies={globalHits.data ?? []} isLoading={globalHits.isLoading} mediaType="movie" slug="global-hits" />
-        <MovieRow title="Korean Drama" movies={koreanDrama.data ?? []} isLoading={koreanDrama.isLoading} mediaType="tv" slug="korean-dramas" />
-        <MovieRow title="Japanese Shows" movies={japaneseShows.data ?? []} isLoading={japaneseShows.isLoading} mediaType="tv" slug="japanese-shows" />
-        <MovieRow title="Black Stories" movies={blackStories.data ?? []} isLoading={blackStories.isLoading} mediaType="movie" slug="black-stories" />
-        <MovieRow title="Action & Adventure" movies={action.data ?? []} isLoading={action.isLoading} mediaType="movie" slug="action" />
-        <MovieRow title="Romance & Drama" movies={romanceDrama.data ?? []} isLoading={romanceDrama.isLoading} mediaType="movie" slug="romance-drama" />
-        <MovieRow title="Comedy & Feel-Good" movies={comedy.data ?? []} isLoading={comedy.isLoading} mediaType="movie" slug="comedy" />
-        <MovieRow title="Horror" movies={horror.data ?? []} isLoading={horror.isLoading} mediaType="movie" slug="horror" />
+        {rowsQuery.isLoading &&
+          Array.from({ length: 4 }).map((_, i) => (
+            <MovieRow key={`sk-${i}`} title="" subjects={[]} isLoading />
+          ))}
+        {contentRows.map((row, i) => {
+          const q = rowQueries[i];
+          const subjects = (q?.data?.subjects ?? []).filter((s) => s.hasResource !== false);
+          if (!q?.isLoading && subjects.length < 3) return null;
+          return (
+            <MovieRow
+              key={row.opId}
+              title={row.title}
+              subjects={subjects}
+              isLoading={q?.isLoading}
+            />
+          );
+        })}
       </div>
     </div>
   );

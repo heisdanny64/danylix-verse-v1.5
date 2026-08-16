@@ -1,239 +1,83 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { Link } from "react-router-dom";
+import { ChevronRight, Info, Shield, Trash2, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  ArrowLeft, User, LogOut, ChevronRight, Lock, Edit2, Check, X,
-  Settings, Info, FileText, Shield,
-} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLibrary } from "@/lib/library";
 
 const ProfilePage = () => {
-  const { user, profile, signOut, updateProfile, updatePassword } = useAuth();
-  const navigate = useNavigate();
+  const { profile, updateProfile } = useAuth();
+  const { watchlist, continueWatching, clearLibrary } = useLibrary();
   const { toast } = useToast();
+  const [name, setName] = useState(profile.name);
 
-  const [view, setView] = useState<"settings" | "edit">("settings");
-  const [editName, setEditName] = useState(profile?.name ?? "");
-  const [editUsername, setEditUsername] = useState(profile?.username ?? "");
-  const [editLoading, setEditLoading] = useState(false);
-
-  const [changingPw, setChangingPw] = useState(false);
-  const [newPw, setNewPw] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [pwLoading, setPwLoading] = useState(false);
-
-  if (!user || !profile) {
-    navigate("/auth", { replace: true });
-    return null;
-  }
-
-  const handleSaveProfile = async () => {
-    setEditLoading(true);
-    const { error } = await updateProfile({ name: editName, username: editUsername });
-    setEditLoading(false);
-    if (error) {
-      toast({ title: "Error", description: error, variant: "destructive" });
-      return;
-    }
+  const save = () => {
+    updateProfile({ name: name.trim() || "Guest" });
     toast({ title: "Profile updated" });
-    setView("settings");
   };
 
-  const handleChangePassword = async () => {
-    if (newPw.length < 6) {
-      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
-      return;
-    }
-    if (newPw !== confirmPw) {
-      toast({ title: "Passwords do not match", variant: "destructive" });
-      return;
-    }
-    setPwLoading(true);
-    const { error } = await updatePassword(newPw);
-    setPwLoading(false);
-    if (error) {
-      toast({ title: "Error", description: error, variant: "destructive" });
-      return;
-    }
-    toast({ title: "Password changed" });
-    setChangingPw(false);
-    setNewPw("");
-    setConfirmPw("");
-  };
+  const links = [
+    { to: "/settings", label: "Settings", icon: User },
+    { to: "/about", label: "About D. Verse", icon: Info },
+    { to: "/privacy", label: "Privacy Policy", icon: Shield },
+    { to: "/terms", label: "Terms of Use", icon: Shield },
+  ];
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate("/", { replace: true });
-  };
-
-  // ---------- Edit Profile View ----------
-  if (view === "edit") {
-    return (
-      <div className="min-h-screen pb-24 bg-background">
-        <header className="flex items-center gap-3 px-4 pt-6 pb-4">
-          <button
-            onClick={() => setView("settings")}
-            className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-foreground"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <h1 className="text-xl font-bold text-foreground">Edit Profile</h1>
-        </header>
-
-        {/* Avatar */}
-        <div className="flex flex-col items-center px-4 pb-6">
-          <div className="relative">
-            <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center">
-              <User className="w-12 h-12 text-muted-foreground" />
-            </div>
-            <div className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-              <Edit2 className="w-4 h-4 text-primary-foreground" />
-            </div>
-          </div>
-        </div>
-
-        {/* Form */}
-        <div className="px-4 space-y-5">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Full name</label>
-            <Input
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              placeholder="Your name"
-              className="bg-card border-border"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Email</label>
-            <Input
-              value={profile.email}
-              readOnly
-              className="bg-card border-border text-muted-foreground cursor-not-allowed"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Username</label>
-            <Input
-              value={editUsername}
-              onChange={(e) => setEditUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-              placeholder="username"
-              className="bg-card border-border"
-            />
-          </div>
-
-          <Button
-            onClick={handleSaveProfile}
-            disabled={editLoading}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white mt-4"
-          >
-            {editLoading ? "Saving..." : "Save Changes"}
-          </Button>
-
-          <button className="w-full text-center text-sm text-destructive pt-4">
-            Delete Account
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ---------- Settings View (Default) ----------
   return (
-    <div className="min-h-screen pb-24 bg-background">
-      <header className="flex items-center gap-3 px-4 pt-6 pb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-foreground"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <h1 className="text-xl font-bold text-foreground">Settings</h1>
+    <div className="min-h-screen pb-28">
+      <header className="space-y-4 px-4 pb-4 pt-8">
+        <div className="flex items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/15 text-xl font-bold text-primary">
+            {profile.name.slice(0, 1).toUpperCase()}
+          </div>
+          <div>
+            <h1 className="text-xl font-extrabold text-foreground">{profile.name}</h1>
+            <p className="text-xs text-muted-foreground">
+              {watchlist.length} saved · {continueWatching.length} in progress
+            </p>
+          </div>
+        </div>
       </header>
 
-      {/* User Card */}
-      <button
-        onClick={() => {
-          setView("edit");
-          setEditName(profile.name);
-          setEditUsername(profile.username);
-        }}
-        className="w-full flex items-center gap-4 px-4 py-4 mb-6"
-      >
-        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-          <User className="w-8 h-8 text-muted-foreground" />
+      <section className="space-y-3 px-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Display name</p>
+        <div className="flex gap-2">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
+          <Button onClick={save}>Save</Button>
         </div>
-        <div className="flex-1 text-left">
-          <h2 className="text-base font-bold text-foreground">{profile.name}</h2>
-          <p className="text-sm text-muted-foreground">@{profile.username}</p>
-        </div>
-        <ChevronRight className="w-5 h-5 text-muted-foreground" />
-      </button>
-
-      {/* Settings Rows */}
-      <section className="px-4 space-y-2">
-        <SettingsRow icon={Settings} label="General Settings" onClick={() => navigate("/settings")} />
-        <SettingsRow
-          icon={Lock}
-          label="Change Password"
-          onClick={() => setChangingPw(!changingPw)}
-        />
-        {changingPw && (
-          <div className="px-4 py-3 rounded-lg bg-card border border-border space-y-3">
-            <Input
-              type="password"
-              placeholder="New password"
-              value={newPw}
-              onChange={(e) => setNewPw(e.target.value)}
-              className="bg-background"
-            />
-            <Input
-              type="password"
-              placeholder="Confirm password"
-              value={confirmPw}
-              onChange={(e) => setConfirmPw(e.target.value)}
-              className="bg-background"
-            />
-            <Button size="sm" onClick={handleChangePassword} disabled={pwLoading}>
-              {pwLoading ? "Saving..." : "Update Password"}
-            </Button>
-          </div>
-        )}
-        <SettingsRow icon={Info} label="About" onClick={() => navigate("/about")} />
-        <SettingsRow icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
-        <SettingsRow icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />
       </section>
 
-      {/* Sign Out */}
-      <div className="px-4 mt-8">
-        <Button
-          variant="destructive"
-          className="w-full"
-          onClick={handleSignOut}
+      <section className="mt-6 space-y-1 px-4">
+        {links.map(({ to, label, icon: Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-foreground transition-colors hover:bg-muted"
+          >
+            <Icon className="h-4 w-4 text-muted-foreground" />
+            <span className="flex-1">{label}</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+        ))}
+        <button
+          onClick={() => {
+            clearLibrary();
+            toast({ title: "Library cleared" });
+          }}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm text-destructive transition-colors hover:bg-muted"
         >
-          <LogOut className="w-4 h-4 mr-2" />
-          Log Out
-        </Button>
-      </div>
+          <Trash2 className="h-4 w-4" />
+          <span className="flex-1 text-left">Clear local library</span>
+        </button>
+      </section>
+
+      <p className="mt-8 px-4 text-center text-xs text-muted-foreground">
+        Accounts are coming back soon. For now your library is stored on this device.
+      </p>
     </div>
   );
 };
-
-// Reusable settings row
-function SettingsRow({ icon: Icon, label, onClick }: { icon: any; label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center justify-between py-3.5 px-4 rounded-lg bg-card border border-border"
-    >
-      <span className="flex items-center gap-3 text-sm text-foreground">
-        <Icon className="w-4 h-4 text-muted-foreground" />
-        {label}
-      </span>
-      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-    </button>
-  );
-}
 
 export default ProfilePage;
