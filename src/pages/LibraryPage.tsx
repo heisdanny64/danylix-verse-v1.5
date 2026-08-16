@@ -1,68 +1,64 @@
-import { useState } from "react";
-import { BookmarkPlus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Library as LibraryIcon, X } from "lucide-react";
 import { useLibrary } from "@/lib/library";
-import MovieCard from "@/components/MovieCard";
+import { buildDetailsHref } from "@/lib/slug";
+import { POSTER_FALLBACK } from "@/services/moviebox";
 import ContinueWatchingRow from "@/components/ContinueWatchingRow";
 
-type Filter = "all" | "movie" | "tv";
-
 const LibraryPage = () => {
-  const { watchlist } = useLibrary();
-  const [filter, setFilter] = useState<Filter>("all");
-
-  const filters: { label: string; value: Filter }[] = [
-    { label: "All", value: "all" },
-    { label: "Movies", value: "movie" },
-    { label: "Series", value: "tv" },
-  ];
-
-  const filtered = watchlist.filter((m) => {
-    if (filter === "all") return true;
-    return m.mediaType === filter;
-  });
+  const { watchlist, removeFromWatchlist } = useLibrary();
 
   return (
-    <div className="min-h-screen pb-24">
-      <header className="px-4 pt-6 pb-4">
-        <h1 className="text-xl font-bold text-foreground">My Library</h1>
+    <div className="min-h-screen pb-28">
+      <header className="px-4 pb-2 pt-6">
+        <h1 className="text-2xl font-extrabold text-foreground">Your Library</h1>
       </header>
 
-      <ContinueWatchingRow />
+      <div className="space-y-6 py-4">
+        <ContinueWatchingRow />
 
-      <section className="px-4 mt-6">
-        <h2 className="text-base font-semibold text-foreground mb-3">Watchlist</h2>
-
-        <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
-          {filters.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-                filter === f.value
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {filtered.length > 0 ? (
-          <div className="grid grid-cols-3 gap-3">
-            {filtered.map((m) => (
-              <MovieCard key={`${m.id}-${m.mediaType}`} movie={m as any} mediaType={(m.mediaType === "anime" ? "tv" : m.mediaType) as "movie" | "tv"} compact />
-            ))}
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-32 rounded-lg bg-card border border-border">
-            <div className="text-center space-y-2">
-              <BookmarkPlus className="w-8 h-8 text-muted-foreground mx-auto" />
-              <p className="text-sm text-muted-foreground">Your watchlist is empty</p>
+        <section className="space-y-3 px-4">
+          <h2 className="text-lg font-bold text-foreground">Watchlist</h2>
+          {watchlist.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-16 text-center">
+              <LibraryIcon className="h-10 w-10 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Nothing saved yet. Add titles to see them here.
+              </p>
+              <Link to="/" className="text-sm font-medium text-primary">
+                Browse content
+              </Link>
             </div>
-          </div>
-        )}
-      </section>
+          ) : (
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+              {watchlist.map((item) => (
+                <div key={item.id} className="relative">
+                  <Link to={buildDetailsHref(item.type, item.id)} className="group block">
+                    <div className="aspect-[2/3] overflow-hidden rounded-xl bg-muted">
+                      <img
+                        src={item.poster || POSTER_FALLBACK}
+                        alt={item.title}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                    <p className="mt-1.5 line-clamp-2 text-xs font-medium text-foreground">
+                      {item.title}
+                    </p>
+                  </Link>
+                  <button
+                    onClick={() => removeFromWatchlist(item.id)}
+                    aria-label="Remove from library"
+                    className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-background/70 text-foreground backdrop-blur"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 };

@@ -1,133 +1,61 @@
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Star, Plus, Play, Check, Download } from "lucide-react";
-import { getMovieDetails, backdropUrl, getDisplayInfo, type TMDBEpisode } from "@/lib/tmdb";
-import { getMovieTVRecommendations } from "@/lib/tastedive";
-import { useLibrary } from "@/lib/library";
+import { ArrowLeft, Check, Download, Play, Plus, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
+import { useLibrary } from "@/lib/library";
+import { buildPlayerHref } from "@/lib/slug";
 import EpisodeList from "@/components/EpisodeList";
-import MovieRow from "@/components/MovieRow";
-import CastRow, { type CastRowItem } from "@/components/CastRow";
+import CastRow from "@/components/CastRow";
 import DownloadModal from "@/components/DownloadModal";
-import { getGiftedInfo } from "@/services/giftedApi";
-import { parseSlug, isGiftedId, buildDetailsHref } from "@/lib/slug";
-import { preloadMatch } from "@/lib/contentMap";
 import ShareButton from "@/components/ShareButton";
-import { useState, useEffect } from "react";
+import {
+  getInfo,
+  getSeason,
+  posterOf,
+  subjectGenres,
+  subjectYear,
+  type SubjectKind,
+} from "@/services/moviebox";
 
 const DetailsPage = () => {
-  const { type: typeParam, id: rawIdParam, slug: slugParam } = useParams<{ type?: string; id?: string; slug?: string }>();
+  const { id } = useParams<{ id: string }>();
   const { pathname } = useLocation();
-
-  // Slug routes (/movie/:slug, /tv/:slug) don't include :type in params —
-  // derive it from the first path segment instead.
-  const type = typeParam || pathname.split("/")[1] || "movie";
-
-  // Slug routes provide :slug; legacy routes (/details/:type/:id) provide :id.
-  const id = slugParam ? parseSlug(slugParam).id : rawIdParam;
-  const isGifted = isGiftedId(id);
-  const source = (isGifted ? "gifted" : "tmdb") as "tmdb" | "gifted";
   const navigate = useNavigate();
   const { toast } = useToast();
   const { toggleWatchlist, isInWatchlist } = useLibrary();
   const [downloadOpen, setDownloadOpen] = useState(false);
 
-  const contentType = ((type === "anime" ? "tv" : type) as "movie" | "tv") || "movie";
-  const numericId = Number(id);
+  const routeType = (pathname.split("/")[1] || "movie") as SubjectKind;
 
-  const { data: tmdbDetail, isLoading: tmdbLoading } = useQuery({
-    queryKey: ["detail", contentType, numericId],
-    queryFn: () => getMovieDetails(numericId, contentType),
-    enabled: !isGifted && !!numericId,
+  const { data: info, isLoading } = useQuery({
+    queryKey: ["mb-info", id],
+    queryFn: () => getInfo(id!),
+    enabled: !!id,
   });
 
-  const { data: giftedDetail, isLoading: giftedLoading } = useQuery({
-    queryKey: ["gifted-info", id],
-    queryFn: () => getGiftedInfo(id!),
-    enabled: isGifted && !!id,
-  });
+  const type: SubjectKind = (info?.type as SubjectKind) || routeType;
+  const isSeries = type === "tv" || type === "shorts";
 
-  const isLoading = isGifted ? giftedLoading : tmdbLoading;
-
-  // Normalize Gifted info into the same shape DetailsPage already consumes.
-  const detail: any = isGifted
-    ? giftedDetail
-      ? {
-          id: giftedDetail.subjectId || id,
-          title: giftedDetail.title,
-          name: giftedDetail.type === "tv" ? giftedDetail.title : undefined,
-          overview: giftedDetail.overview || "",
-          // Store the full Gifted URL directly — we'll handle it in the img src below
-          poster_path: giftedDetail.imageUrl || null,
-          backdrop_path: giftedDetail.coverUrl || giftedDetail.imageUrl || null,
-          vote_average: giftedDetail.rating ?? 0,
-          release_date: giftedDetail.year ? `${giftedDetail.year}-01-01` : undefined,
-          first_air_date: giftedDetail.type === "tv" && giftedDetail.year ? `${giftedDetail.year}-01-01` : undefined,
-          genres: (giftedDetail.genres || []).map((g, i) => ({ id: i, name: g })),
-          runtime: giftedDetail.runtime,
-          tagline: undefined,
-          number_of_seasons: giftedDetail.seasons?.length,
-          seasons: giftedDetail.seasons?.map((s) => ({
-            id: s.season_number,
-            name: s.name || `Season ${s.season_number}`,
-            season_number: s.season_number,
-            episode_count: s.episode_count,
-            poster_path: null,
-            air_date: null,
-          })),
-        }
-      : undefined
-    : tmdbDetail;
-
-  const giftedCast: CastRowItem[] | undefined = isGifted && giftedDetail?.stars
-    ? giftedDetail.stars.map((s, i) => ({
-        id: i,
-        name: s.name,
-        character: s.character,
-        // Gifted returns full absolute URLs (avatarUrl). Pass directly as profile_path.
-        // CastRow's cast-prop path renders profile_path as a direct <img src>, not
-        // through the TMDB image CDN builder (that only runs in the id+mediaType path).
-        profile_path: s.profile ?? null,
-      }))
-    : undefined;
-
-  const tmdbTitle = detail ? getDisplayInfo(detail as any).title : "";
-  const { year } = detail ? getDisplayInfo(detail as any) : { year: null };
-
-  // Background mapping preload — fires as soon as title + year are available.
-  // Caches the Gifted subjectId in localStorage so Player loads instantly.
-  // Runs only for TMDB-sourced content (Gifted content already has its subjectId).
-  useEffect(() => {
-    if (isGifted || !tmdbTitle || !numericId) return;
-    preloadMatch({
-      title: tmdbTitle,
-      year: year ? Number(year) : null,
-      type: contentType,
-      tmdbId: numericId,
-    });
-  }, [isGifted, tmdbTitle, year, contentType, numericId]);
-
-  const recTitle = isGifted ? (giftedDetail?.title || "") : tmdbTitle;
-
-  const { data: recs } = useQuery({
-    queryKey: ["tastedive-recs", contentType, recTitle, isGifted ? id : numericId],
-    queryFn: () => getMovieTVRecommendations(
-      recTitle,
-      contentType,
-      isGifted ? undefined : numericId,
-    ),
-    enabled: !!detail && !!recTitle,
-    staleTime: 30 * 60 * 1000,
+  const { data: seasonData } = useQuery({
+    queryKey: ["mb-season", id],
+    queryFn: () => getSeason(id!),
+    enabled: !!id && isSeries,
   });
 
   if (isLoading) {
     return (
       <div className="min-h-screen pb-8">
         <Skeleton className="h-[50vh] w-full" />
-        <div className="px-4 mt-4 space-y-3">
+        <div className="mt-4 space-y-3 px-4">
           <Skeleton className="h-8 w-3/4" />
           <Skeleton className="h-4 w-1/2" />
           <Skeleton className="h-20 w-full" />
@@ -136,149 +64,132 @@ const DetailsPage = () => {
     );
   }
 
-  if (!detail) {
+  if (!info) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex min-h-screen items-center justify-center">
         <p className="text-muted-foreground">Content not found</p>
       </div>
     );
   }
 
-  const { title } = getDisplayInfo(detail as any);
-  const inWatchlist = isInWatchlist(detail.id, contentType);
-  const seasons = contentType === "tv" ? detail.seasons?.filter((s: any) => s.season_number > 0) || [] : [];
-
-  const handlePlayEpisode = (ep: TMDBEpisode) => {
-    navigate(`/player/tv/${id}?season=${ep.season_number}&episode=${ep.episode_number}`);
-  };
+  const year = subjectYear(info);
+  const genres = subjectGenres(info);
+  const inWatchlist = isInWatchlist(info.subjectId || id!);
+  const seasons = seasonData?.seasons ?? [];
 
   const handleToggleWatchlist = () => {
-    const m = {
-      id: detail.id,
-      title: detail.title,
-      name: detail.name,
-      overview: detail.overview,
-      poster_path: detail.poster_path,
-      backdrop_path: detail.backdrop_path,
-      vote_average: detail.vote_average,
-      release_date: detail.release_date,
-      first_air_date: detail.first_air_date,
-      genre_ids: (detail.genres || []).map((g) => g.id),
-    } as any;
-    const added = toggleWatchlist(m, contentType);
+    const added = toggleWatchlist({
+      subjectId: info.subjectId || id!,
+      title: info.title,
+      poster: info.poster,
+      type,
+    });
     toast({ title: added ? "Added to Library" : "Removed from Library" });
   };
 
+  const play = (se = 1, ep = 1) => navigate(buildPlayerHref(type, id!, se, ep));
+
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-28">
       <div className="relative h-[50vh] overflow-hidden">
-        <img
-          src={isGifted ? (detail.backdrop_path || detail.poster_path || "") : backdropUrl(detail.backdrop_path)}
-          alt={title}
-          className="w-full h-full object-cover"
-        />
+        <img src={posterOf(info)} alt={info.title} className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
         <button
-          onClick={() => window.history.length > 1 ? navigate(-1) : navigate("/")}
-          className="absolute top-4 left-4 z-10 w-9 h-9 rounded-full bg-background/60 backdrop-blur flex items-center justify-center text-foreground hover:bg-background/80 transition-colors"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/"))}
+          className="absolute left-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-background/60 text-foreground backdrop-blur transition-colors hover:bg-background/80"
+          aria-label="Back"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="px-4 -mt-20 relative z-10 space-y-4">
-        <h1 className="text-3xl font-extrabold text-foreground leading-tight">{title}</h1>
+      <div className="relative z-10 -mt-20 space-y-4 px-4">
+        <h1 className="text-3xl font-extrabold leading-tight text-foreground">{info.title}</h1>
 
         <div className="flex items-center gap-3 text-sm">
           {year && <span className="text-muted-foreground">{year}</span>}
-          <div className="flex items-center gap-1 text-primary">
-            <Star className="w-4 h-4 fill-primary" />
-            <span className="font-semibold">{(detail.vote_average ?? 0).toFixed(1)}</span>
-          </div>
-          {contentType === "movie" && detail.runtime && <span className="text-muted-foreground">{detail.runtime} min</span>}
-          {contentType === "tv" && detail.number_of_seasons && (
-            <span className="text-muted-foreground">{detail.number_of_seasons} Season{detail.number_of_seasons > 1 ? "s" : ""}</span>
+          {info.rating != null && (
+            <div className="flex items-center gap-1 text-primary">
+              <Star className="h-4 w-4 fill-primary" />
+              <span className="font-semibold">{info.rating.toFixed(1)}</span>
+            </div>
           )}
-        </div>
-
-        {detail.tagline && <p className="text-sm italic text-muted-foreground">{detail.tagline}</p>}
-
-        <div className="flex flex-wrap gap-2">
-          {(detail.genres || []).map((genre) => (
-            <span key={genre.id} className="px-3 py-1 rounded-full bg-muted text-xs font-medium text-muted-foreground">
-              {genre.name}
+          {type === "movie" && info.runtime && (
+            <span className="text-muted-foreground">{info.runtime} min</span>
+          )}
+          {isSeries && seasons.length > 0 && (
+            <span className="text-muted-foreground">
+              {seasons.length} Season{seasons.length > 1 ? "s" : ""}
             </span>
-          ))}
+          )}
+          {info.country && <span className="text-muted-foreground">{info.country}</span>}
         </div>
 
-        <p className="text-sm text-muted-foreground leading-relaxed">{detail.overview}</p>
+        {genres.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {genres.map((g) => (
+              <span
+                key={g}
+                className="rounded-full bg-muted px-3 py-1 text-xs font-medium capitalize text-muted-foreground"
+              >
+                {g}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {info.description && (
+          <p className="text-sm leading-relaxed text-muted-foreground">{info.description}</p>
+        )}
 
         <div className="flex gap-2">
-          <Button
-            className="flex-1 gap-1.5"
-            onClick={() => {
-              if (contentType === "movie") navigate(`/player/movie/${id}`);
-              else navigate(`/player/tv/${id}?season=1&episode=1`);
-            }}
-          >
-            <Play className="w-4 h-4 fill-current" />
+          <Button className="flex-1 gap-1.5" onClick={() => play(isSeries ? 1 : 0, isSeries ? 1 : 0)}>
+            <Play className="h-4 w-4 fill-current" />
             Watch Now
           </Button>
           <Button variant="outline" className="gap-1.5" onClick={handleToggleWatchlist}>
-            {inWatchlist ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {inWatchlist ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             <span className="hidden md:inline">{inWatchlist ? "Added" : "Add to Library"}</span>
           </Button>
-          <ShareButton type={contentType} id={id ?? ""} title={title} overview={detail.overview} rating={detail.vote_average ?? null} />
-          <Button variant="outline" className="gap-1.5" onClick={() => setDownloadOpen(true)}>
-            <Download className="w-4 h-4" />
+          <ShareButton
+            type={type}
+            id={id ?? ""}
+            title={info.title}
+            overview={info.description}
+            rating={info.rating ?? null}
+          />
+          <Button variant="outline" aria-label="Download" onClick={() => setDownloadOpen(true)}>
+            <Download className="h-4 w-4" />
           </Button>
         </div>
 
-        {contentType === "tv" && seasons.length > 0 && (
-          <div className="pt-2">
-            <h2 className="text-lg font-bold text-foreground mb-2">Seasons & Episodes</h2>
-            <Accordion type="single" collapsible>
-              {seasons.map((s) => (
-                <AccordionItem key={s.season_number} value={`season-${s.season_number}`}>
-                  <AccordionTrigger className="text-sm">
-                    {s.name} ({s.episode_count} episodes)
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <EpisodeList
-                      tvId={numericId}
-                      externalId={isGifted ? id : undefined}
-                      seasonNumber={s.season_number}
-                      onPlayEpisode={handlePlayEpisode}
-                      source={isGifted ? "gifted" : "tmdb"}
-                      episodeCount={s.episode_count}
-                    />
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          </div>
+        {isSeries && seasons.length > 0 && (
+          <Accordion type="single" collapsible defaultValue={`s-${seasons[0].season}`}>
+            {seasons.map((s) => (
+              <AccordionItem key={s.season} value={`s-${s.season}`}>
+                <AccordionTrigger className="text-sm font-semibold">
+                  Season {s.season} · {s.episodesAvailable || s.totalEpisode} episodes
+                </AccordionTrigger>
+                <AccordionContent>
+                  <EpisodeList season={s} onPlay={(se, ep) => play(se, ep)} />
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        )}
+
+        {info.staff && info.staff.length > 0 && (
+          <CastRow
+            cast={info.staff.map((s) => ({ name: s.name, role: s.role, avatar: s.avatar }))}
+          />
         )}
       </div>
 
-      <div className="mt-8">
-        {isGifted
-          ? <CastRow cast={giftedCast} externalLoading={giftedLoading} />
-          : <CastRow id={detail.id} mediaType={contentType} />}
-      </div>
-
-      {recs && recs.length > 0 && (
-        <div className="mt-8">
-          <MovieRow title="More Like This" movies={recs} mediaType={contentType} />
-        </div>
-      )}
-
       <DownloadModal
         open={downloadOpen}
-        onClose={() => setDownloadOpen(false)}
-        type={contentType}
-        externalId={detail.id}
-        title={title}
-        year={year ? Number(year) : null}
+        onOpenChange={setDownloadOpen}
+        subjectId={id!}
+        title={info.title}
       />
     </div>
   );
