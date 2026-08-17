@@ -1,44 +1,49 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-export type SubtitleSize = "small" | "medium" | "large";
 export interface PlayerPrefs {
-  quality: string;          // "Auto" | "1080p" | "720p" | "480p" | "360p"
-  subtitleLang: string;     // e.g. "English"
-  subtitleSize: SubtitleSize;
+  /** "Auto" | "1080p" | "720p" | "480p" | "360p" */
+  quality: string;
+  autoplayNext: boolean;
 }
 
 const KEY = "dverse_player_prefs";
-const DEFAULTS: PlayerPrefs = { quality: "Auto", subtitleLang: "English", subtitleSize: "small" };
+const DEFAULTS: PlayerPrefs = { quality: "Auto", autoplayNext: true };
 
 function read(): PlayerPrefs {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return DEFAULTS;
-    return { ...DEFAULTS, ...JSON.parse(raw) };
-  } catch { return DEFAULTS; }
+    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
+  } catch {
+    return DEFAULTS;
+  }
 }
 
-export function getPlayerPrefs(): PlayerPrefs { return read(); }
+export function getPlayerPrefs(): PlayerPrefs {
+  return read();
+}
 
-export function cueScale(size: SubtitleSize): number {
-  return size === "large" ? 1.5 : size === "medium" ? 1.2 : 1.0;
+/** Highest available resolution at or below the preferred quality. */
+export function pickResolution(available: number[], quality: string): number | null {
+  const sorted = [...available].sort((a, b) => b - a);
+  if (!sorted.length) return null;
+  const target = Number(String(quality).replace(/\D/g, ""));
+  if (!target) return sorted[0];
+  return sorted.find((r) => r <= target) ?? sorted[sorted.length - 1];
 }
 
 export function usePlayerPrefs() {
-  const [prefs, setPrefsState] = useState<PlayerPrefs>(read);
+  const [prefs, setPrefs] = useState<PlayerPrefs>(read);
 
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => { if (e.key === KEY) setPrefsState(read()); };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(prefs));
+    } catch {
+      /* noop */
+    }
+  }, [prefs]);
 
   const update = useCallback((patch: Partial<PlayerPrefs>) => {
-    setPrefsState(prev => {
-      const next = { ...prev, ...patch };
-      try { localStorage.setItem(KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
+    setPrefs((p) => ({ ...p, ...patch }));
   }, []);
 
   return { prefs, update };

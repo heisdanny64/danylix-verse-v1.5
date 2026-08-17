@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { getInfo, getSeason, getStream, type MovieBoxStream, type SubjectKind } from "@/services/moviebox";
 import { getLocalResume, useLibrary } from "@/lib/library";
+import { pickResolution, usePlayerPrefs } from "@/hooks/usePlayerPrefs";
 import { cn } from "@/lib/utils";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
@@ -45,6 +46,8 @@ export default function Player() {
   const isMovie = kind === "movie";
   const se = isMovie ? 0 : Number(searchParams.get("se")) || 1;
   const ep = isMovie ? 0 : Number(searchParams.get("ep")) || 1;
+  const { prefs } = usePlayerPrefs();
+
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -96,8 +99,13 @@ export default function Player() {
 
   const activeStream = useMemo(() => {
     if (!streams.length) return undefined;
-    return streams.find((s) => s.resolution === selectedRes) ?? streams[0];
-  }, [streams, selectedRes]);
+    if (selectedRes) {
+      const picked = streams.find((s) => s.resolution === selectedRes);
+      if (picked) return picked;
+    }
+    const preferred = pickResolution(streams.map((s) => s.resolution), prefs.quality);
+    return streams.find((s) => s.resolution === preferred) ?? streams[0];
+  }, [streams, selectedRes, prefs.quality]);
 
   const seasons = seasonData?.seasons ?? [];
   const currentSeason = seasons.find((s) => s.season === se);
@@ -225,7 +233,7 @@ export default function Player() {
         onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
         onEnded={() => {
           persist();
-          if (hasNext) next();
+          if (hasNext && prefs.autoplayNext) next();
         }}
       />
 

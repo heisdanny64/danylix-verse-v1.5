@@ -28,7 +28,7 @@ const Privacy = () => {
         </section>
         <section>
           <h2 className="text-foreground font-semibold mb-1">Third-party services</h2>
-          <p>We rely on Supabase for authentication and database storage, and on third-party metadata providers (such as TMDB and AniList) to display content information. Their use of data is governed by their respective privacy policies.</p>
+          <p>Your library and playback progress are stored locally on your device. Content metadata and streams are provided by the MovieBox media API; its use of data is governed by its own policies.</p>
         </section>
         <section>
           <h2 className="text-foreground font-semibold mb-1">Your rights</h2>
