@@ -233,7 +233,7 @@ export default function Player() {
         onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
         onEnded={() => {
           persist();
-          if (hasNext) next();
+          if (hasNext && prefs.autoplayNext) next();
         }}
       />
 
