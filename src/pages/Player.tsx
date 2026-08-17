@@ -46,6 +46,8 @@ export default function Player() {
   const isMovie = kind === "movie";
   const se = isMovie ? 0 : Number(searchParams.get("se")) || 1;
   const ep = isMovie ? 0 : Number(searchParams.get("ep")) || 1;
+  const { prefs } = usePlayerPrefs();
+
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
