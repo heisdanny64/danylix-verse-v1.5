@@ -42,9 +42,17 @@ const HomePage = () => {
     })),
   });
 
+  // The Banner row is sometimes empty upstream — fall back to the first
+  // populated content row so the hero is never blank.
+  const heroSubjects = heroQuery.data?.subjects?.length
+    ? heroQuery.data.subjects
+    : (rowQueries.find((q) => q.data?.subjects?.length)?.data?.subjects ?? []);
+  const heroLoading =
+    rowsQuery.isLoading || heroQuery.isLoading || (!heroSubjects.length && rowQueries.some((q) => q.isLoading));
+
   return (
     <div className="min-h-screen pb-28">
-      <HeroBanner subjects={heroQuery.data?.subjects ?? []} isLoading={rowsQuery.isLoading || heroQuery.isLoading} />
+      <HeroBanner subjects={heroSubjects.slice(0, 6)} isLoading={heroLoading} />
 
       <div className="my-4 px-4 md:hidden">
         <button
