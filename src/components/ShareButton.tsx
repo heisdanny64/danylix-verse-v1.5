@@ -19,7 +19,7 @@ const ShareButton = ({ type, id, title }: Props) => {
 
     try {
       if (typeof navigator !== "undefined" && "share" in navigator) {
-        await navigator.share({ title: `${title} - D. Verse`, url, text: message });
+        await navigator.share({ title: `${title} - D. Verse`, text: message });
         return;
       }
     } catch (error: unknown) {
