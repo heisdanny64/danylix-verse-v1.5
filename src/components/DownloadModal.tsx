@@ -70,14 +70,25 @@ const DownloadModal = ({ open, onOpenChange, subjectId, title }: Props) => {
           <p className="py-6 text-center text-sm text-muted-foreground">No downloads available.</p>
         )}
 
-        {seasons.map((season) => (
-          <div key={season.season} className="space-y-2">
+        {activeSeason && (
+          <div className="space-y-3">
             {seasons.length > 1 && (
-              <p className="text-sm font-semibold text-foreground">Season {season.season}</p>
+              <Select value={selectedSeason} onValueChange={setSelectedSeason}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a season" />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {seasons.map((s) => (
+                    <SelectItem key={s.season} value={String(s.season)}>
+                      Season {s.season} · {s.episodes.length} episode{s.episodes.length === 1 ? "" : "s"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
-            <Accordion type="single" collapsible>
-              {season.episodes.map((ep) => (
-                <AccordionItem key={ep.episode} value={`s${season.season}e${ep.episode}`}>
+            <Accordion type="single" collapsible key={activeSeason.season}>
+              {activeSeason.episodes.map((ep) => (
+                <AccordionItem key={ep.episode} value={`s${activeSeason.season}e${ep.episode}`}>
                   <AccordionTrigger className="text-sm">
                     {ep.episode === 0 ? "Movie" : `Episode ${ep.episode}`}
                   </AccordionTrigger>
@@ -102,7 +113,7 @@ const DownloadModal = ({ open, onOpenChange, subjectId, title }: Props) => {
               ))}
             </Accordion>
           </div>
-        ))}
+        )}
       </DialogContent>
     </Dialog>
   );
