@@ -38,6 +38,16 @@ const DownloadModal = ({ open, onOpenChange, subjectId, title }: Props) => {
   });
 
   const seasons = data?.seasons ?? [];
+  const [selectedSeason, setSelectedSeason] = useState<string>("");
+
+  useEffect(() => {
+    if (seasons.length && !seasons.some((s) => String(s.season) === selectedSeason)) {
+      setSelectedSeason(String(seasons[0].season));
+    }
+  }, [seasons, selectedSeason]);
+
+  const activeSeason = seasons.find((s) => String(s.season) === selectedSeason) ?? seasons[0];
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
