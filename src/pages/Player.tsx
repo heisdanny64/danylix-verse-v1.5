@@ -210,8 +210,25 @@ export default function Player() {
   };
 
   const toggleFullscreen = async () => {
-    if (!document.fullscreenElement) await shellRef.current?.requestFullscreen?.().catch(() => undefined);
-    else await document.exitFullscreen().catch(() => undefined);
+    const orientation = (screen as unknown as {
+      orientation?: { lock?: (o: string) => Promise<void>; unlock?: () => void };
+    }).orientation;
+
+    if (!document.fullscreenElement) {
+      await shellRef.current?.requestFullscreen?.().catch(() => undefined);
+      try {
+        await orientation?.lock?.(kind === "shorts" ? "portrait" : "landscape");
+      } catch {
+        /* orientation lock unsupported (desktop / iOS) */
+      }
+    } else {
+      try {
+        orientation?.unlock?.();
+      } catch {
+        /* noop */
+      }
+      await document.exitFullscreen().catch(() => undefined);
+    }
   };
 
   const title = info?.title ?? "";
