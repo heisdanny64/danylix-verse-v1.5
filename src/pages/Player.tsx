@@ -189,7 +189,17 @@ export default function Player() {
   }, [bumpControls]);
 
   useEffect(() => {
-    const onFs = () => setFullscreen(!!document.fullscreenElement);
+    const onFs = () => {
+      const active = !!document.fullscreenElement;
+      setFullscreen(active);
+      if (!active) {
+        try {
+          (screen as unknown as { orientation?: { unlock?: () => void } }).orientation?.unlock?.();
+        } catch {
+          /* noop */
+        }
+      }
+    };
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
