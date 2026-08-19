@@ -189,7 +189,17 @@ export default function Player() {
   }, [bumpControls]);
 
   useEffect(() => {
-    const onFs = () => setFullscreen(!!document.fullscreenElement);
+    const onFs = () => {
+      const active = !!document.fullscreenElement;
+      setFullscreen(active);
+      if (!active) {
+        try {
+          (screen as unknown as { orientation?: { unlock?: () => void } }).orientation?.unlock?.();
+        } catch {
+          /* noop */
+        }
+      }
+    };
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
@@ -210,8 +220,25 @@ export default function Player() {
   };
 
   const toggleFullscreen = async () => {
-    if (!document.fullscreenElement) await shellRef.current?.requestFullscreen?.().catch(() => undefined);
-    else await document.exitFullscreen().catch(() => undefined);
+    const orientation = (screen as unknown as {
+      orientation?: { lock?: (o: string) => Promise<void>; unlock?: () => void };
+    }).orientation;
+
+    if (!document.fullscreenElement) {
+      await shellRef.current?.requestFullscreen?.().catch(() => undefined);
+      try {
+        await orientation?.lock?.(kind === "shorts" ? "portrait" : "landscape");
+      } catch {
+        /* orientation lock unsupported (desktop / iOS) */
+      }
+    } else {
+      try {
+        orientation?.unlock?.();
+      } catch {
+        /* noop */
+      }
+      await document.exitFullscreen().catch(() => undefined);
+    }
   };
 
   const title = info?.title ?? "";

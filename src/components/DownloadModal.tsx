@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, Loader2 } from "lucide-react";
 import {
@@ -12,6 +13,13 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getDownloadPack } from "@/services/moviebox";
 
 interface Props {
@@ -30,6 +38,16 @@ const DownloadModal = ({ open, onOpenChange, subjectId, title }: Props) => {
   });
 
   const seasons = data?.seasons ?? [];
+  const [selectedSeason, setSelectedSeason] = useState<string>("");
+
+  useEffect(() => {
+    if (seasons.length && !seasons.some((s) => String(s.season) === selectedSeason)) {
+      setSelectedSeason(String(seasons[0].season));
+    }
+  }, [seasons, selectedSeason]);
+
+  const activeSeason = seasons.find((s) => String(s.season) === selectedSeason) ?? seasons[0];
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -52,14 +70,25 @@ const DownloadModal = ({ open, onOpenChange, subjectId, title }: Props) => {
           <p className="py-6 text-center text-sm text-muted-foreground">No downloads available.</p>
         )}
 
-        {seasons.map((season) => (
-          <div key={season.season} className="space-y-2">
+        {activeSeason && (
+          <div className="space-y-3">
             {seasons.length > 1 && (
-              <p className="text-sm font-semibold text-foreground">Season {season.season}</p>
+              <Select value={selectedSeason} onValueChange={setSelectedSeason}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a season" />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {seasons.map((s) => (
+                    <SelectItem key={s.season} value={String(s.season)}>
+                      Season {s.season} · {s.episodes.length} episode{s.episodes.length === 1 ? "" : "s"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
-            <Accordion type="single" collapsible>
-              {season.episodes.map((ep) => (
-                <AccordionItem key={ep.episode} value={`s${season.season}e${ep.episode}`}>
+            <Accordion type="single" collapsible key={activeSeason.season}>
+              {activeSeason.episodes.map((ep) => (
+                <AccordionItem key={ep.episode} value={`s${activeSeason.season}e${ep.episode}`}>
                   <AccordionTrigger className="text-sm">
                     {ep.episode === 0 ? "Movie" : `Episode ${ep.episode}`}
                   </AccordionTrigger>
@@ -84,7 +113,7 @@ const DownloadModal = ({ open, onOpenChange, subjectId, title }: Props) => {
               ))}
             </Accordion>
           </div>
-        ))}
+        )}
       </DialogContent>
     </Dialog>
   );
