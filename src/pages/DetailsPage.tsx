@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Check, Download, Play, Plus, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,23 +18,21 @@ import CastRow from "@/components/CastRow";
 import DownloadModal from "@/components/DownloadModal";
 import ShareButton from "@/components/ShareButton";
 import {
+  contentImageOf,
   getInfo,
   getSeason,
-  posterOf,
   subjectGenres,
   subjectYear,
   type SubjectKind,
 } from "@/services/moviebox";
+import { absoluteUrl, formatContentTitle, setDetailsMetadata } from "@/lib/seo";
 
 const DetailsPage = () => {
   const { id } = useParams<{ id: string }>();
-  const { pathname } = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { toggleWatchlist, isInWatchlist } = useLibrary();
   const [downloadOpen, setDownloadOpen] = useState(false);
-
-  const routeType = (pathname.split("/")[1] || "movie") as SubjectKind;
 
   const { data: info, isLoading } = useQuery({
     queryKey: ["mb-info", id],
@@ -42,8 +40,22 @@ const DetailsPage = () => {
     enabled: !!id,
   });
 
-  const type: SubjectKind = (info?.type as SubjectKind) || routeType;
+  const type: SubjectKind = (info?.type as SubjectKind) || "movie";
   const isSeries = type === "tv" || type === "shorts";
+  const contentTitle = info ? formatContentTitle(info.title, info.releaseDate) : "D. Verse";
+
+  useEffect(() => {
+    if (!info) return;
+    setDetailsMetadata({
+      title: contentTitle,
+      description: info.description,
+      image: absoluteUrl(contentImageOf(info)),
+    });
+
+    return () => {
+      document.title = "Home - D. Verse";
+    };
+  }, [contentTitle, info]);
 
   const { data: seasonData } = useQuery({
     queryKey: ["mb-season", id],
@@ -92,10 +104,10 @@ const DetailsPage = () => {
   return (
     <div className="min-h-screen pb-28">
       <div className="relative h-[50vh] overflow-hidden">
-        <img src={posterOf(info)} alt={info.title} className="h-full w-full object-cover" />
+        <img src={contentImageOf(info)} alt={info.title} className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
         <button
-          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/"))}
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/home"))}
           className="absolute left-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-background/60 text-foreground backdrop-blur transition-colors hover:bg-background/80"
           aria-label="Back"
         >
@@ -154,9 +166,7 @@ const DetailsPage = () => {
           <ShareButton
             type={type}
             id={id ?? ""}
-            title={info.title}
-            overview={info.description}
-            rating={info.rating ?? null}
+            title={contentTitle}
           />
           <Button variant="outline" aria-label="Download" onClick={() => setDownloadOpen(true)}>
             <Download className="h-4 w-4" />

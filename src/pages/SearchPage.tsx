@@ -35,7 +35,7 @@ const SearchPage = () => {
     <div className="min-h-screen pb-28">
       <div className="sticky top-0 z-40 flex items-center gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
         <button
-          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/"))}
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/home"))}
           className="flex h-9 w-9 items-center justify-center rounded-full text-foreground"
           aria-label="Back"
         >

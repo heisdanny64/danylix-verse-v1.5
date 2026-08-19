@@ -25,7 +25,7 @@ const LibraryPage = () => {
               <p className="text-sm text-muted-foreground">
                 Nothing saved yet. Add titles to see them here.
               </p>
-              <Link to="/" className="text-sm font-medium text-primary">
+              <Link to="/home" className="text-sm font-medium text-primary">
                 Browse content
               </Link>
             </div>

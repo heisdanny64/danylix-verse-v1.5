@@ -18,6 +18,9 @@ export interface MovieBoxSubject {
   title: string;
   poster: string | null;
   thumbnail?: string | null;
+  backdrop?: string | null;
+  backdropPath?: string | null;
+  background?: string | null;
   description?: string;
   releaseDate?: string | null;
   runtime?: number | null;
@@ -155,6 +158,16 @@ export const POSTER_FALLBACK = "/placeholder.svg";
 
 export function posterOf(s: { poster?: string | null; thumbnail?: string | null }): string {
   return s.poster || s.thumbnail || POSTER_FALLBACK;
+}
+
+export function contentImageOf(s: {
+  backdrop?: string | null;
+  backdropPath?: string | null;
+  background?: string | null;
+  poster?: string | null;
+  thumbnail?: string | null;
+}): string {
+  return s.backdrop || s.backdropPath || s.background || s.poster || s.thumbnail || POSTER_FALLBACK;
 }
 
 /**

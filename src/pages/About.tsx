@@ -14,7 +14,7 @@ const About = () => {
       <article className="px-4 prose prose-invert max-w-2xl mx-auto space-y-4 text-sm text-muted-foreground leading-relaxed">
         <h2 className="text-foreground text-lg font-semibold">Welcome to D. Verse</h2>
         <p>
-          D. Verse is a cinematic discovery platform that brings together the world's
+          D. Verse, short for Danylix Verse, is a cinematic discovery platform that brings together the world's
           best movies, series, and anime in a single, beautifully crafted experience.
           We believe great stories deserve a great home — one that's fast, focused,
           and free of distractions.

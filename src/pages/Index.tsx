@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { Search } from "lucide-react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import MovieRow from "@/components/MovieRow";
@@ -16,6 +17,10 @@ const STALE = 15 * 60 * 1000;
 
 const HomePage = () => {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = "Home - D. Verse";
+  }, []);
 
   const rowsQuery = useQuery({
     queryKey: ["home-rows"],

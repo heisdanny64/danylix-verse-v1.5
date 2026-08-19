@@ -8,37 +8,26 @@ interface Props {
   type: SubjectKind;
   id: string;
   title: string;
-  overview?: string;
-  rating?: number | null;
 }
 
-const ShareButton = ({ type, id, title, overview, rating }: Props) => {
+const ShareButton = ({ type, id, title }: Props) => {
   const { toast } = useToast();
 
   const handleShare = async () => {
     const url = `${window.location.origin}${buildDetailsHref(type, id)}`;
-    const typeLabel = type === "tv" ? "Series" : type === "shorts" ? "Shorts" : "Movie";
-    const text = [
-      `🎬 Title: ${title}`,
-      `📺 Type: ${typeLabel}`,
-      rating ? `⭐ Rating: ${rating.toFixed(1)} / 10` : null,
-      overview ? `📝 ${overview.slice(0, 200)}${overview.length > 200 ? "…" : ""}` : null,
-      ` `,
-      `Check it out on D. Verse 👇`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const message = `Watch ${title} on D. Verse:\n${url}`;
 
     try {
       if (typeof navigator !== "undefined" && "share" in navigator) {
-        await navigator.share({ title, url, text });
+        await navigator.share({ title: `${title} - D. Verse`, url, text: message });
         return;
       }
-    } catch (err: any) {
-      if (err?.name === "AbortError") return;
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
     }
+
     try {
-      await navigator.clipboard.writeText(`${text}\n${url}`);
+      await navigator.clipboard.writeText(message);
       toast({ title: "Copied to clipboard" });
     } catch {
       toast({ title: "Could not share link", variant: "destructive" });

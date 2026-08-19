@@ -102,68 +102,165 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
-/* =========================
-   SPLASH (ISOLATED)
-========================= */
-
-#splash-screen {
-  position: fixed;
-  inset: 0;
-  background: #000;
+.welcome-shell {
+  position: relative;
   display: flex;
+  min-height: 100vh;
   align-items: center;
   justify-content: center;
-  z-index: 99999;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 45%, hsl(var(--primary) / 0.13), transparent 36%),
+    hsl(var(--background));
+  isolation: isolate;
 }
 
-.splash-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
+.welcome-shell::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(115deg, transparent 20%, hsl(var(--primary) / 0.07), transparent 80%);
+  content: "";
+  animation: welcome-sheen 5s ease-in-out infinite;
+}
+
+.welcome-content {
+  position: relative;
+  z-index: 1;
+  width: min(100% - 3rem, 42rem);
   text-align: center;
-  padding: 20px;
+  animation: welcome-content-in 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.splash-inner img {
-  width: 120px;
-  height: auto;
-  animation: fadeIn 0.8s ease forwards;
-}
-
-.logo-text {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 1px;
-}
-
-.logo-d {
-  color: #fff;
-}
-
-.logo-verse {
+.welcome-kicker {
+  margin-bottom: 0.75rem;
   color: hsl(var(--primary));
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  animation: welcome-fade-up 700ms 100ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.tagline {
-  font-size: 14px;
-  color: #aaa;
+.welcome-title {
+  color: white;
+  font-size: clamp(2rem, 6vw, 3.75rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  text-wrap: balance;
+  text-shadow: 0 0 32px hsl(var(--primary) / 0.28);
+  animation: welcome-fade-up 800ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-#typing-text {
-  color: #fff;
-  border-right: 2px solid hsl(var(--primary));
-  padding-right: 3px;
+.welcome-subtitle {
+  margin: 1rem auto 0;
+  max-width: 30rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.95rem;
+  line-height: 1.6;
+  animation: welcome-fade-up 800ms 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Animations */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
+.welcome-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(12px);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.welcome-glow-primary {
+  top: 18%;
+  left: 18%;
+  width: 14rem;
+  height: 14rem;
+  background: hsl(var(--primary) / 0.2);
+  animation: welcome-orbit-primary 7s ease-in-out infinite;
+}
+
+.welcome-glow-secondary {
+  right: 12%;
+  bottom: 12%;
+  width: 18rem;
+  height: 18rem;
+  background: hsl(var(--primary) / 0.12);
+  animation: welcome-orbit-secondary 9s ease-in-out infinite;
+}
+
+.welcome-progress {
+  width: min(100%, 14rem);
+  height: 2px;
+  margin: 2.25rem auto 0;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: hsl(var(--muted) / 0.75);
+  animation: welcome-fade-up 700ms 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.welcome-progress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: hsl(var(--primary));
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: welcome-progress 3s linear both;
+}
+
+@keyframes welcome-content-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes welcome-fade-up {
+  from { opacity: 0; transform: translateY(1rem); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-#splash-screen.fade-out {
-  opacity: 0;
-  transition: opacity 0.6s ease;
-  pointer-events: none;
+@keyframes welcome-sheen {
+  0%, 100% { transform: translateX(-20%); opacity: 0.35; }
+  50% { transform: translateX(20%); opacity: 0.75; }
+}
+
+@keyframes welcome-orbit-primary {
+  0%, 100% { transform: translate3d(-8%, -4%, 0) scale(0.9); }
+  50% { transform: translate3d(24%, 18%, 0) scale(1.15); }
+}
+
+@keyframes welcome-orbit-secondary {
+  0%, 100% { transform: translate3d(8%, 0, 0) scale(1); }
+  50% { transform: translate3d(-18%, -16%, 0) scale(0.86); }
+}
+
+@keyframes welcome-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-shell::after,
+  .welcome-content,
+  .welcome-kicker,
+  .welcome-title,
+  .welcome-subtitle,
+  .welcome-glow,
+  .welcome-progress,
+  .welcome-progress span {
+    animation: none;
+  }
+
+  .welcome-content,
+  .welcome-kicker,
+  .welcome-title,
+  .welcome-subtitle,
+  .welcome-progress {
+    opacity: 1;
+    transform: none;
+  }
+
+  .welcome-progress span {
+    transform: scaleX(1);
+  }
 }

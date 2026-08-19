@@ -1,109 +1,79 @@
- # D.Verse (Danylix Verse)
+# D. Verse
 
-<p align="center">
-  <img src=https://i.postimg.cc/MX2tWsDv/1777987278526-(2).png" alt="D.Verse Logo" />
-</p>
+D. Verse, short for **Danylix Verse**, is a simple, mobile-first movie and series discovery experience. It provides a cinematic interface for browsing Moviebox content, viewing title details, watching available streams, managing a local library, and sharing title links.
 
-**D.Verse** is a modern movie & TV discovery platform built for seamless streaming and downloads — powered by a unified system that combines reliable metadata with fast content delivery.
+## Features
 
-🌐 Live: https://dverse.name.ng  
-💸 Free for everyone. No subscriptions. No hidden costs.
+- Moviebox-powered home rows, hero content, and search.
+- Details pages at `/info/:id` using Moviebox subject IDs.
+- Movie and series playback with episode navigation.
+- Local watchlist and continue-watching library.
+- Dynamic page titles, Open Graph metadata, and content artwork for shared details links.
+- Netlify-ready SPA routing, Edge Function metadata handling, and an XML sitemap.
 
----
+## Requirements
 
-## ✨ Features
+You need Node.js, npm, and a self-hosted Moviebox API instance. D. Verse does not include the Moviebox API itself.
 
-- 🎬 Discover Movies & TV Shows in a clean, modern UI  
-- 🔍 Unified Search (TMDB + Gifted API)  
-- 📺 Instant Streaming with custom player  
-- ⬇️ High-quality Downloads with multiple options  
-- 🌍 Language Variants (Original / English, etc.)  
-- 🔄 Continue Watching (synced experience)  
-- ⚡ Fast, responsive, PWA-ready  
+## Moviebox API setup
 
----
+1. Visit the [spun-moviebox-api repository](https://github.com/heisdanny64/spun-moviebox-api).
+2. Follow that repository's instructions to self-host the API.
+3. Configure the API's secret value when setting up the service.
+4. Copy the deployed API URL and the same secret value into D. Verse's environment file.
 
-## 🧠 How it Works
+The API URL and secret must match between the self-hosted Moviebox API and D. Verse. Never commit a real `.env` file or secret values to Git.
 
-D.Verse uses a **hybrid architecture**:
+## Environment variables
 
-- **Metadata Layer** → Powered by [TMDB API](https://developer.themoviedb.org/)  
-- **Streaming & Downloads** → Powered by [Gifted Tech Movies API](https://movieapi.giftedtech.co.ke/docs)
+Copy the example file before starting development:
 
-```
-TMDB → Titles, posters, seasons, structure  
-Gifted API → Streaming links, downloads, variants  
+```bash
+cp .env.example .env
 ```
 
-This allows D.Verse to:
-- stay accurate with metadata  
-- support a wider range of content (including niche/global titles)  
-- deliver fast and reliable playback  
+Then configure the following values:
 
----
+```env
+# Used by the browser application
+VITE_MOVIEBOX_API_URL=https://your-moviebox-api.example.com
+VITE_MOVIEBOX_SECRET=your-secret
 
-## 🚀 Getting Started (Local Setup)
+# Used by the Netlify Edge Function for server-rendered social metadata
+MOVIEBOX_API_URL=https://your-moviebox-api.example.com
+MOVIEBOX_SECRET=your-secret
+```
 
-### Requirements
-- Node.js  
-- npm (or pnpm/yarn)  
+The `VITE_` variables are included in the browser build because the client calls the Moviebox API directly. The non-prefixed variables are for Netlify's server-side Edge Function and should be configured in Netlify's environment settings.
 
-### Installation
+## Local development
 
-```sh
-git clone <YOUR_GIT_URL>
-cd <YOUR_PROJECT_NAME>
+```bash
 npm install
 npm run dev
 ```
 
----
+The application starts at the local Vite development URL. The root route displays the welcome screen and then redirects to `/home`.
 
-## 🔑 API Setup
+## Production build
 
-To run this project, you’ll need:
+```bash
+npm run build
+npm test
+```
 
-### 1. TMDB API Key  
-Get yours here:  
-👉 https://developer.themoviedb.org/
+## Netlify deployment
 
-### 2. Gifted Tech Movies API Key  
-Get access here:  
-👉 https://movieapi.giftedtech.co.ke/docs  
+Use the following Netlify settings:
 
----
+| Setting | Value |
+|---|---|
+| Build command | `npm run build` |
+| Publish directory | `dist` |
+| Functions directory | `netlify/edge-functions` |
 
-## 🛠 Tech Stack
+Configure all required Moviebox environment variables in Netlify before deploying. The repository includes `netlify.toml`, SPA fallback redirects, the dynamic details metadata Edge Function, `robots.txt`, and `sitemap.xml`.
 
-- Vite  
-- React  
-- TypeScript  
-- Tailwind CSS  
-- shadcn/ui  
+## License
 
----
-
-## 📦 Deployment
-
-D.Verse is already live at:  
-👉 https://dverse.name.ng  
-
-You can deploy your own version using platforms like Vercel or Netlify.
-
----
-
-## ⚠️ Disclaimer
-
-D.Verse does not host any content.  
-All streaming and download links are provided by third-party APIs.
-
----
-
-## 💡 Final Note
-
-D.Verse is built to be simple on the surface, but powerful underneath —  
-a fast, unified media experience without the usual complexity.
-
----
-
-**Danny Daniels**
+D. Verse is open-source software released under the [MIT License](./LICENSE). Copyright © 2026 Danny Daniels.

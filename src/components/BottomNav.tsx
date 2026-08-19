@@ -5,9 +5,8 @@ const BottomNav = () => {
   const { pathname } = useLocation();
 
   if (
-    pathname.startsWith("/movie/") ||
-    pathname.startsWith("/tv/") ||
-    pathname.startsWith("/shorts/") ||
+    pathname === "/" ||
+    pathname.startsWith("/info/") ||
     pathname.startsWith("/player/") ||
     pathname === "/search"
   ) {
@@ -15,7 +14,7 @@ const BottomNav = () => {
   }
 
   const tabs = [
-    { to: "/", label: "Home", icon: Home, end: true },
+    { to: "/home", label: "Home", icon: Home, end: true },
     { to: "/library", label: "Library", icon: Library, end: false },
     { to: "/profile", label: "You", icon: User, end: false },
   ];

@@ -22,7 +22,7 @@ const TopNav = () => {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  if (path.startsWith("/player/")) return null;
+  if (path === "/" || path.startsWith("/player/")) return null;
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +31,7 @@ const TopNav = () => {
   };
 
   const tabs = [
-    { to: "/", label: "Home", icon: Home, end: true },
+    { to: "/home", label: "Home", icon: Home, end: true },
     { to: "/library", label: "Library", icon: Library, end: false },
   ];
 
@@ -40,7 +40,7 @@ const TopNav = () => {
       className={`sticky top-0 z-50 hidden w-full border-b border-border bg-background/85 pt-safe backdrop-blur-md transition-shadow duration-200 md:flex ${scrolled ? "shadow-md" : "shadow-none"}`}
     >
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-6 px-6">
-        <Link to="/" className="flex items-center font-extrabold text-foreground">
+        <Link to="/home" className="flex items-center font-extrabold text-foreground">
           <span className="text-foreground">D.</span>
           <span className="ml-1 text-primary">Verse</span>
         </Link>

@@ -24,6 +24,7 @@ import { getInfo, getSeason, getStream, type MovieBoxStream, type SubjectKind } 
 import { getLocalResume, useLibrary } from "@/lib/library";
 import { pickResolution, usePlayerPrefs } from "@/hooks/usePlayerPrefs";
 import { cn } from "@/lib/utils";
+import { formatContentTitle, setPlayerMetadata } from "@/lib/seo";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
@@ -70,6 +71,15 @@ export default function Player() {
     enabled: !!id,
     staleTime: 30 * 60 * 1000,
   });
+
+  useEffect(() => {
+    if (!info) return;
+    setPlayerMetadata(formatContentTitle(info.title, info.releaseDate));
+
+    return () => {
+      document.title = "Home - D. Verse";
+    };
+  }, [info]);
 
   const { data: seasonData } = useQuery({
     queryKey: ["mb-season", id],
@@ -292,7 +302,7 @@ export default function Player() {
       >
         <div className="flex items-center gap-3 p-4">
           <button
-            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/"))}
+            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/home"))}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white"
             aria-label="Back"
           >
