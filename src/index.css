@@ -264,3 +264,39 @@ body {
     transform: scaleX(1);
   }
 }
+
+@keyframes dverse-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.dverse-marquee-track {
+  animation: dverse-marquee 28s linear infinite;
+}
+
+.dverse-marquee-viewport:hover .dverse-marquee-track,
+.dverse-marquee-viewport:focus-within .dverse-marquee-track {
+  animation-play-state: paused;
+}
+
+@media (max-width: 767px), (prefers-reduced-motion: reduce) {
+  .dverse-marquee-track {
+    min-width: 100%;
+    animation: none;
+  }
+
+  .dverse-marquee-content {
+    width: 100%;
+    justify-content: center;
+    padding-right: 0;
+  }
+
+  .dverse-marquee-duplicate,
+  .dverse-marquee-copy {
+    display: none;
+  }
+}

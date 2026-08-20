@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Search, X } from "lucide-react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import MovieRow from "@/components/MovieRow";
 import HeroBanner from "@/components/HeroBanner";
@@ -17,6 +17,23 @@ const STALE = 15 * 60 * 1000;
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const [showBrandNotice, setShowBrandNotice] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.sessionStorage.getItem("dverse-brand-notice-dismissed") !== "1";
+    } catch {
+      return true;
+    }
+  });
+
+  const dismissBrandNotice = () => {
+    setShowBrandNotice(false);
+    try {
+      window.sessionStorage.setItem("dverse-brand-notice-dismissed", "1");
+    } catch {
+      // Dismissal still applies for the current render when storage is unavailable.
+    }
+  };
 
   useEffect(() => {
     document.title = "Danylix Verse (D. Verse) - Movies & Series";
@@ -57,15 +74,44 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen pb-28">
-      <section className="mx-auto max-w-7xl px-4 pt-6 md:px-8 md:pt-8" aria-labelledby="brand-heading">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary">D. Verse</p>
-        <h1 id="brand-heading" className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-          Danylix Verse
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
-          Danylix Verse, also known as D. Verse, is your cinematic universe for discovering movies and series, exploring title details, and finding available ways to watch.
-        </p>
-      </section>
+      {showBrandNotice && (
+        <section className="mx-auto max-w-7xl px-4 pt-4 md:px-8 md:pt-6" aria-labelledby="brand-heading">
+          <div className="relative flex items-center overflow-hidden rounded-full border border-primary/20 bg-card/80 py-2.5 pl-4 pr-12 shadow-sm backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-card to-transparent" aria-hidden="true" />
+            <div className="pointer-events-none absolute inset-y-0 right-11 z-10 w-8 bg-gradient-to-l from-card to-transparent" aria-hidden="true" />
+            <div className="dverse-marquee-viewport min-w-0 flex-1 overflow-hidden">
+              <div className="dverse-marquee-track flex min-w-max items-center">
+                <div className="dverse-marquee-content flex shrink-0 items-center gap-5 pr-10">
+                  <h1 id="brand-heading" className="shrink-0 text-sm font-semibold tracking-wide md:text-base">
+                    <span className="text-primary">D.</span>{" "}
+                    <span className="text-white">Verse</span>
+                  </h1>
+                  <span className="dverse-marquee-copy text-xs text-muted-foreground md:text-sm">
+                    Your cinematic universe for movies and series
+                  </span>
+                </div>
+                <div className="dverse-marquee-content dverse-marquee-duplicate flex shrink-0 items-center gap-5 pr-10" aria-hidden="true">
+                  <span className="text-sm font-semibold tracking-wide md:text-base">
+                    <span className="text-primary">D.</span>{" "}
+                    <span className="text-white">Verse</span>
+                  </span>
+                  <span className="dverse-marquee-copy text-xs text-muted-foreground md:text-sm">
+                    Your cinematic universe for movies and series
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={dismissBrandNotice}
+              className="absolute right-2 z-20 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              aria-label="Dismiss D. Verse announcement"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        </section>
+      )}
 
       <HeroBanner subjects={heroSubjects.slice(0, 6)} isLoading={heroLoading} />
 
