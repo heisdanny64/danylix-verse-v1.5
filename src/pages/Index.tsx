@@ -19,7 +19,7 @@ const HomePage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    document.title = "Home - D. Verse";
+    document.title = "Danylix Verse (D. Verse) - Movies & Series";
   }, []);
 
   const rowsQuery = useQuery({
@@ -57,6 +57,16 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen pb-28">
+      <section className="mx-auto max-w-7xl px-4 pt-6 md:px-8 md:pt-8" aria-labelledby="brand-heading">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary">D. Verse</p>
+        <h1 id="brand-heading" className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+          Danylix Verse
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
+          Danylix Verse, also known as D. Verse, is your cinematic universe for discovering movies and series, exploring title details, and finding available ways to watch.
+        </p>
+      </section>
+
       <HeroBanner subjects={heroSubjects.slice(0, 6)} isLoading={heroLoading} />
 
       <div className="my-4 px-4 md:hidden">

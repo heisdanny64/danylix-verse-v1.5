@@ -23,7 +23,7 @@ import NotFound from "./pages/NotFound.tsx";
 const queryClient = new QueryClient();
 
 const STATIC_TITLES: Record<string, string> = {
-  "/home": "Home - D. Verse",
+  "/home": "Danylix Verse (D. Verse) - Movies & Series",
   "/library": "Your Library - D. Verse",
   "/profile": "Your Profile - D. Verse",
   "/settings": "Settings - D. Verse",
