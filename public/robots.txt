@@ -13,4 +13,4 @@ Allow: /
 User-agent: *
 Allow: /
 
-Sitemap: https://dverse.name.ng/sitemap.xml
+Sitemap: https://dverse.byspun.xyz/sitemap.xml
